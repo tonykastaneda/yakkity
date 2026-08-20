@@ -57,6 +57,23 @@ brew install tonykastaneda/tap/code-chats
 Homebrew installs the executable as `chat`; no alias or `.zshrc` change is
 required.
 
+## Uninstall
+
+One-line installation:
+
+```zsh
+curl -fsSL https://tonykastaneda.github.io/code-chats/uninstall | bash
+```
+
+Homebrew installation:
+
+```zsh
+brew uninstall code-chats
+```
+
+The uninstaller leaves `fzf` and `jq` installed because other programs may
+depend on them.
+
 ## Development
 
 ```zsh
