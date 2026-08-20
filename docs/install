@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+set -eu
+
+curl --proto '=https' --tlsv1.2 -fsSL \
+    https://raw.githubusercontent.com/tonykastaneda/code-chats/v0.1.0/install.sh |
+    bash -s -- "$@"
