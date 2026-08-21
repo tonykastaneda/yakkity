@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>yakkity — fzf for your coding agent sessions</title>
 <meta name="description" content="yakkity installs yakk: an fzf interface for finding, resuming, and handing off local Claude Code, Codex, Cursor Agent, and Grok sessions.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='18' fill='%2317171a'/%3E%3Ctext x='50' y='68' font-family='monospace' font-size='58' font-weight='700' fill='%237bcf00' text-anchor='middle'%3E%3E%3C/text%3E%3C/svg%3E">
+<link rel="icon" href="assets/favicon@4x.png" type="image/png">
 <style>
   :root {
     --bg: #17171a;
@@ -64,7 +64,7 @@
     line-height: 0;
   }
   .wordmark img {
-    height: 29.26px;
+    height: 32.19px;
     width: auto;
     display: block;
   }
@@ -331,19 +331,25 @@
 
   .yak-watermark {
     position: absolute;
-    right: -40px;
+    right: 0;
     bottom: 0;
     width: clamp(288px, 38vw, 624px);
     aspect-ratio: 54.3 / 43.275;
     overflow: hidden;
-    transform: translateX(10%);
+    overflow: clip;
+    clip-path: inset(0);
+    contain: strict;
     pointer-events: none;
     user-select: none;
   }
   .yak-watermark img {
+    position: absolute;
+    top: 0;
+    left: 10%;
     display: block;
     width: 100%;
     height: auto;
+    opacity: .035;
   }
 
   footer.site {
@@ -361,7 +367,30 @@
   footer.site .links { display: flex; gap: 18px; }
 
   @media (max-width: 620px) {
+    html,
+    body {
+      width: 100%;
+      max-width: 100%;
+      overflow-x: hidden;
+      overscroll-behavior-x: none;
+    }
+    body { touch-action: pan-y; }
+    @supports (overflow: clip) {
+      html,
+      body { overflow-x: clip; }
+    }
     h1 { font-size: 23px; }
+    .codebox code {
+      overflow-wrap: anywhere;
+      white-space: normal;
+    }
+    .term-body { overflow-x: hidden; }
+    .term-body .line,
+    .mini-term .line {
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+    }
+    .mini-term { overflow-x: hidden; }
     .term-row { grid-template-columns: 52px 84px 1fr; gap: 8px; }
     .agent-grid { grid-template-columns: repeat(2, 1fr); }
     .agent-tile:nth-child(2) { border-right: none; }
@@ -375,7 +404,7 @@
 <div class="wrap">
 
   <header class="site">
-    <a class="wordmark" href="/"><img src="assets/logo.svg" alt="yakkity"></a>
+    <a class="wordmark" href="/"><img src="assets/logo-wht.svg" alt="yakkity"></a>
     <a class="gh-link" href="https://github.com/tonykastaneda/yakkity" aria-label="yakkity on GitHub" target="_blank" rel="noopener">
       <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
     </a>
@@ -497,7 +526,7 @@
 
 </div>
 
-<div class="yak-watermark"><img src="assets/yak-icon.svg" alt="" aria-hidden="true"></div>
+<div class="yak-watermark"><img src="assets/icon-wht.svg" alt="" aria-hidden="true"></div>
 
 <script>
 document.querySelectorAll('.copy-btn').forEach(function (btn) {
