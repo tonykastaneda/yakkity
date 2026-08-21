@@ -99,7 +99,32 @@ LAVENDER=$'\033[38;5;141m'
 
 format_time() {
     local epoch="$1"
-    date -r "$epoch" "+%Y-%m-%d %I:%M %p" 2>/dev/null || echo ""
+    [[ -n "$epoch" ]] || { echo ""; return; }
+
+    local now diff value unit
+    now="$(date +%s)"
+    diff=$(( now - epoch ))
+    (( diff < 0 )) && diff=0
+
+    if (( diff < 60 )); then
+        echo "just now"
+        return
+    elif (( diff < 3600 )); then
+        value=$(( diff / 60 )); unit="minute"
+    elif (( diff < 86400 )); then
+        value=$(( diff / 3600 )); unit="hour"
+    elif (( diff < 604800 )); then
+        value=$(( diff / 86400 )); unit="day"
+    else
+        date -r "$epoch" "+%Y-%m-%d %I:%M %p" 2>/dev/null || echo ""
+        return
+    fi
+
+    if (( value == 1 )); then
+        echo "${value} ${unit} ago"
+    else
+        echo "${value} ${unit}s ago"
+    fi
 }
 
 # Pull a scalar string value out of flat JSON without a jq dependency.
