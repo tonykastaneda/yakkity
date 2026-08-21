@@ -1,19 +1,20 @@
 #!/bin/zsh
 
-# code-chats — Search, resume, and hand off local coding-agent sessions.
+# yakkity — Search, resume, and hand off local coding-agent sessions.
 
 set -u
 
-VERSION="0.1.0"
+VERSION="0.2.0"
 
 usage() {
     cat <<'EOF'
-Usage: chat [OPTION]
+Usage: yakk [OPTION]
 
   (no option)  Resume the selected conversation in its original agent
   -l, --list   List the 10 most recent conversations
-  -x           Hand off compact context to a different agent
-  -xf          Hand off the full sanitized conversation to a different agent
+  -off         Hand off compact context to a different agent
+  -off-fullfrontal
+               Hand off the full sanitized conversation to a different agent
   -h, --help   Show this help
   -v, --version
                Show the installed version
@@ -25,14 +26,14 @@ HANDOFF_MODE=""
 case "${1:-}" in
     "") ;;
     -l|--list) ;;
-    -x) HANDOFF_MODE="compact" ;;
-    -xf) HANDOFF_MODE="full" ;;
+    -off) HANDOFF_MODE="compact" ;;
+    -off-fullfrontal) HANDOFF_MODE="full" ;;
     -h|--help)
         usage
         exit 0
         ;;
     -v|--version)
-        printf 'code-chats %s\n' "$VERSION"
+        printf 'yakkity %s\n' "$VERSION"
         exit 0
         ;;
     *)
@@ -72,7 +73,7 @@ ensure_fzf() {
     [[ -n "$current" ]] || return
 
     if version_lt "$current" "$MIN_FZF_VERSION"; then
-        echo "fzf $current is too old; code-chats requires $MIN_FZF_VERSION or newer." >&2
+        echo "fzf $current is too old; yakkity requires $MIN_FZF_VERSION or newer." >&2
         exit 1
     fi
 }

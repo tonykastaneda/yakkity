@@ -2,11 +2,11 @@
 
 set -eu
 
-PROGRAM="code-chats"
-DEFAULT_VERSION="0.1.0"
+PROGRAM="yakkity"
+DEFAULT_VERSION="0.2.0"
 DEFAULT_PREFIX="${HOME}/.local"
-REPOSITORY="tonykastaneda/code-chats"
-CHAT_SHA256_0_1_0="0ea9dd4af41de5878e9ec79fb92280104ff98cccefe281070834ba5cdf7855b0"
+REPOSITORY="tonykastaneda/yakkity"
+YAKK_SHA256_0_2_0="b9c5087d2e4b573b69e540749f27358da4d58f6c6e24ab7ec04c8667d5d2b4ab"
 
 VERSION="$DEFAULT_VERSION"
 PREFIX="$DEFAULT_PREFIX"
@@ -17,7 +17,7 @@ usage() {
 Usage: install.sh [OPTIONS]
 
   --yes              Install missing Homebrew dependencies without prompting
-  --version VERSION  Install a specific code-chats version (default: 0.1.0)
+  --version VERSION  Install a specific yakkity version (default: 0.2.0)
   --prefix PATH      Installation prefix (default: ~/.local)
   -h, --help         Show this help
 EOF
@@ -57,9 +57,9 @@ done
 }
 
 case "$VERSION" in
-    0.1.0) CHAT_SHA256="$CHAT_SHA256_0_1_0" ;;
+    0.2.0) YAKK_SHA256="$YAKK_SHA256_0_2_0" ;;
     *)
-        echo "No trusted checksum is embedded for code-chats $VERSION." >&2
+        echo "No trusted checksum is embedded for yakkity $VERSION." >&2
         exit 1
         ;;
 esac
@@ -92,7 +92,7 @@ ensure_dependencies() {
     command -v jq >/dev/null 2>&1 || need_jq=1
     [[ "$need_fzf" -eq 0 && "$need_jq" -eq 0 ]] && return 0
 
-    echo "code-chats requires fzf 0.74.3+ and jq."
+    echo "yakkity requires fzf 0.74.3+ and jq."
 
     if ! command -v brew >/dev/null 2>&1; then
         echo "Install the missing dependencies, then rerun this installer:" >&2
@@ -120,25 +120,25 @@ ensure_dependencies() {
 ensure_dependencies
 
 BIN_DIR="${PREFIX}/bin"
-DESTINATION="${BIN_DIR}/chat"
-DOWNLOAD_URL="https://raw.githubusercontent.com/${REPOSITORY}/v${VERSION}/chat.zsh"
-TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/code-chats-install.XXXXXX")"
-DOWNLOADED_CHAT="${TEMP_DIR}/chat"
+DESTINATION="${BIN_DIR}/yakk"
+DOWNLOAD_URL="https://raw.githubusercontent.com/${REPOSITORY}/v${VERSION}/yakk.zsh"
+TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/yakkity-install.XXXXXX")"
+DOWNLOADED_YAKK="${TEMP_DIR}/yakk"
 trap 'rm -rf "$TEMP_DIR"' EXIT INT TERM
 
-echo "Downloading code-chats ${VERSION}..."
-curl --proto '=https' --tlsv1.2 -fsSL "$DOWNLOAD_URL" -o "$DOWNLOADED_CHAT"
+echo "Downloading yakkity ${VERSION}..."
+curl --proto '=https' --tlsv1.2 -fsSL "$DOWNLOAD_URL" -o "$DOWNLOADED_YAKK"
 
-ACTUAL_SHA256="$(shasum -a 256 "$DOWNLOADED_CHAT" | awk '{print $1}')"
-if [[ "$ACTUAL_SHA256" != "$CHAT_SHA256" ]]; then
+ACTUAL_SHA256="$(shasum -a 256 "$DOWNLOADED_YAKK" | awk '{print $1}')"
+if [[ "$ACTUAL_SHA256" != "$YAKK_SHA256" ]]; then
     echo "Checksum verification failed." >&2
-    echo "Expected: $CHAT_SHA256" >&2
+    echo "Expected: $YAKK_SHA256" >&2
     echo "Received: $ACTUAL_SHA256" >&2
     exit 1
 fi
 
 mkdir -p "$BIN_DIR"
-install -m 0755 "$DOWNLOADED_CHAT" "$DESTINATION"
+install -m 0755 "$DOWNLOADED_YAKK" "$DESTINATION"
 
 case ":$PATH:" in
     *":$BIN_DIR:"*) ;;
@@ -148,17 +148,17 @@ case ":$PATH:" in
         if [[ "$PREFIX" == "$DEFAULT_PREFIX" ]]; then
             if [[ ! -f "$ZSHRC" ]] || ! grep -Fq "$PATH_LINE" "$ZSHRC"; then
                 {
-                    printf '\n# code-chats\n'
+                    printf '\n# yakkity\n'
                     printf '%s\n' "$PATH_LINE"
                 } >> "$ZSHRC"
                 echo "Added ~/.local/bin to PATH in $ZSHRC"
             fi
         else
-            echo "Add $BIN_DIR to your PATH to run chat from any directory."
+            echo "Add $BIN_DIR to your PATH to run yakk from any directory."
         fi
         ;;
 esac
 
 "$DESTINATION" --version
 echo "Installed: $DESTINATION"
-echo "Open a new terminal, then run: chat --help"
+echo "Open a new terminal, then run: yakk --help"

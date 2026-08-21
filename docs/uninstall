@@ -3,5 +3,5 @@
 set -eu
 
 curl --proto '=https' --tlsv1.2 -fsSL \
-    https://raw.githubusercontent.com/tonykastaneda/code-chats/main/uninstall.sh |
+    https://raw.githubusercontent.com/tonykastaneda/yakkity/main/uninstall.sh |
     bash -s -- "$@"

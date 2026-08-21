@@ -57,9 +57,9 @@ remove_path_block() {
     [[ -f "$zshrc" ]] || return 0
 
     path_line='export PATH="$HOME/.local/bin:$PATH"'
-    temporary="$(mktemp "${TMPDIR:-/tmp}/code-chats-zshrc.XXXXXX")"
+    temporary="$(mktemp "${TMPDIR:-/tmp}/yakkity-zshrc.XXXXXX")"
 
-    awk -v marker="# code-chats" -v path_line="$path_line" '
+    awk -v marker="# yakkity" -v path_line="$path_line" '
         $0 == marker { pending = 1; next }
         pending {
             if ($0 == path_line) {
@@ -79,12 +79,12 @@ remove_path_block() {
         mode="$(stat -f '%Lp' "$zshrc" 2>/dev/null || echo 644)"
         chmod "$mode" "$temporary"
         mv "$temporary" "$zshrc"
-        echo "Removed the code-chats PATH block from $zshrc"
+        echo "Removed the yakkity PATH block from $zshrc"
     fi
 }
 
 BIN_DIR="${PREFIX}/bin"
-DESTINATION="${BIN_DIR}/chat"
+DESTINATION="${BIN_DIR}/yakk"
 DIRECT_FOUND=0
 
 if [[ -f "$DESTINATION" || -L "$DESTINATION" ]]; then
@@ -104,18 +104,18 @@ if [[ -f "$DESTINATION" || -L "$DESTINATION" ]]; then
     rmdir "$BIN_DIR" 2>/dev/null || true
 fi
 
-if command -v brew >/dev/null 2>&1 && brew list --formula code-chats >/dev/null 2>&1; then
+if command -v brew >/dev/null 2>&1 && brew list --formula yakkity >/dev/null 2>&1; then
     if [[ "$DIRECT_FOUND" -eq 1 ]]; then
         echo "A separate Homebrew installation is still present."
     fi
 
-    if confirm "Uninstall the Homebrew code-chats formula too?"; then
-        brew uninstall code-chats
+    if confirm "Uninstall the Homebrew yakkity formula too?"; then
+        brew uninstall yakkity
     else
-        echo "Homebrew installation retained. Remove it later with: brew uninstall code-chats"
+        echo "Homebrew installation retained. Remove it later with: brew uninstall yakkity"
     fi
 elif [[ "$DIRECT_FOUND" -eq 0 ]]; then
-    echo "No code-chats installation was found at $DESTINATION."
+    echo "No yakkity installation was found at $DESTINATION."
     echo "If installed elsewhere, rerun with: --prefix PATH"
 fi
 
