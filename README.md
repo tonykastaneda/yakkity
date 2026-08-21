@@ -23,10 +23,9 @@ context exceeds 50,000 tokens.
 
 ## Requirements
 
-- macOS
-- Zsh
+- macOS with Zsh, or Windows with PowerShell 5.1+
 - `fzf` 0.74.3 or newer
-- `jq`
+- `jq` (macOS handoffs only)
 - At least one supported agent CLI: `claude`, `codex`, `cursor-agent`, or `grok`
 
 ## Install
@@ -55,6 +54,17 @@ Homebrew:
 brew install tonykastaneda/tap/yakkity
 ```
 
+Windows PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/tonykastaneda/yakkity/main/install.ps1 | iex"
+```
+
+The Windows installer installs `fzf` through Winget when needed, places
+`yakk.ps1` and a `yakk.cmd` launcher under `%LOCALAPPDATA%\Programs\yakkity`,
+and adds that directory to the user `PATH`. Windows handoffs use PowerShell's
+JSON parser, so `jq` is not required.
+
 Homebrew installs the executable as `yakk`; no alias or `.zshrc` change is
 required.
 
@@ -81,6 +91,13 @@ depend on them.
 zsh -n yakk.zsh
 ./yakk.zsh --help
 ./yakk.zsh --version
+```
+
+On Windows:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\yakk.ps1 -Help
+powershell -NoProfile -ExecutionPolicy Bypass -File .\yakk.ps1 -Version
 ```
 
 ## License

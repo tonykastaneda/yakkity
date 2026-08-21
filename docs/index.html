@@ -47,6 +47,7 @@
         <div class="tabs">
           <button type="button" class="tab active" data-cmd="curl -fsSL https://yakkity.dev/install | bash">macOS · Zsh</button>
           <button type="button" class="tab" data-cmd="brew install tonykastaneda/tap/yakkity">macOS · Brew</button>
+          <button type="button" class="tab" data-cmd="powershell -ExecutionPolicy Bypass -c &quot;irm https://raw.githubusercontent.com/tonykastaneda/yakkity/main/install.ps1 | iex&quot;">Windows</button>
         </div>
         <div class="codebox">
           <code><span class="dollar">$</span><span id="install-cmd-text">curl -fsSL https://yakkity.dev/install | bash</span></code>
@@ -118,10 +119,9 @@
     <section class="feature">
       <h2>Requirements</h2>
       <ul class="req-list">
-        <li>macOS</li>
-        <li>Zsh</li>
+        <li>macOS with Zsh, or Windows with PowerShell 5.1+</li>
         <li><code>fzf</code> 0.74.3 or newer</li>
-        <li><code>jq</code></li>
+        <li><code>jq</code> (macOS handoffs only; Windows uses PowerShell)</li>
         <li>At least one supported agent CLI: <code>claude</code>, <code>codex</code>, <code>cursor-agent</code>, or <code>grok</code></li>
       </ul>
     </section>
