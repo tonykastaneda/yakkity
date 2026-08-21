@@ -127,6 +127,23 @@ format_time() {
     fi
 }
 
+# Agents inherit this process's cwd for project files, git status, and
+# per-directory config (CLAUDE.md, AGENTS.md, etc.). Resume and handoff
+# both need to be in the session's original directory — not wherever
+# yakk itself was launched.
+enter_session_cwd() {
+    local dir="${1:-}"
+    [[ -n "$dir" ]] || return 0
+
+    if [[ -d "$dir" ]]; then
+        cd -- "$dir"
+        return 0
+    fi
+
+    printf '%sOriginal project directory is missing:%s %s\n' "$DIM" "$RESET" "$dir" >&2
+    return 1
+}
+
 # Pull a scalar string value out of flat JSON without a jq dependency.
 # Matches "key":"value" regardless of field order.
 json_str() {
@@ -600,7 +617,10 @@ emit_rows() {
 
         project="${start_name} → ${last_name}"
 
-        printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$provider" "$mtime" "$title" "$id" "$project" "$workspace"
+        # Last field is the session cwd (start_path), not the Phase-1
+        # workspace placeholder. Claude/Codex only learn cwd during title
+        # extraction; resume/handoff need that path to cd before launch.
+        printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$provider" "$mtime" "$title" "$id" "$project" "$start_path"
     done
 }
 
@@ -698,7 +718,15 @@ selection="$(
 
 IFS=$'\t' read -r _ _ _ title provider session workspace <<< "$selection"
 
+if [[ -z "$workspace" ]]; then
+    transcript="$(session_transcript "$provider" "$session" "")"
+    if [[ -n "$transcript" && -f "$transcript" ]]; then
+        workspace="$(grep -m1 -o '"cwd":"[^"]\{0,250\}"' "$transcript" 2>/dev/null | sed -E 's/"cwd":"//;s/"$//')"
+    fi
+fi
+
 clear
+enter_session_cwd "$workspace" || true
 
 if [[ -n "$HANDOFF_MODE" ]]; then
     if ! command -v jq >/dev/null 2>&1; then
@@ -730,15 +758,12 @@ if [[ -n "$HANDOFF_MODE" ]]; then
         }
     fi
 
-    source_cwd="$workspace"
-    if [[ -z "$source_cwd" ]]; then
-        source_cwd="$(grep -m1 -o '"cwd":"[^" ]\{0,250\}"' "$transcript" 2>/dev/null | sed -E 's/"cwd":"//;s/"$//')"
-    fi
-    [[ -d "$source_cwd" ]] && cd -- "$source_cwd"
-
     clear
     printf "%sHanding off to %s%s\n" "$BOLD" "$destination" "$RESET"
     printf "%s%s%s\n" "$DIM" "$title" "$RESET"
+    if [[ -n "$workspace" ]]; then
+        printf "%s%s%s\n" "$DIM" "$workspace" "$RESET"
+    fi
     printf "%sEstimated transferred context: ~%s tokens%s\n\n" "$DIM" "$estimate_tokens" "$RESET"
 
     handoff_prompt="Read the cross-agent conversation handoff at: ${handoff_file}
@@ -759,7 +784,11 @@ Use it as background context for this new session. Do not repeat the transcript.
 fi
 
 printf "%sResuming%s\n" "$BOLD" "$RESET"
-printf "%s%s%s\n\n" "$DIM" "$title" "$RESET"
+printf "%s%s%s\n" "$DIM" "$title" "$RESET"
+if [[ -n "$workspace" ]]; then
+    printf "%s%s%s\n" "$DIM" "$workspace" "$RESET"
+fi
+printf '\n'
 
 # ------------------------------------------------------------
 # Launch correct agent
