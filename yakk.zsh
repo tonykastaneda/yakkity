@@ -4,7 +4,7 @@
 
 set -u
 
-VERSION="0.2.0"
+VERSION="0.2.1"
 
 usage() {
     cat <<'EOF'
@@ -13,7 +13,7 @@ Usage: yakk [OPTION]
   (no option)  Resume the selected conversation in its original agent
   -l, --list   List the 10 most recent conversations
   -off         Hand off compact context to a different agent
-  -off-fullfrontal
+  -ass
                Hand off the full sanitized conversation to a different agent
   -h, --help   Show this help
   -v, --version
@@ -27,7 +27,7 @@ case "${1:-}" in
     "") ;;
     -l|--list) ;;
     -off) HANDOFF_MODE="compact" ;;
-    -off-fullfrontal) HANDOFF_MODE="full" ;;
+    -ass) HANDOFF_MODE="full" ;;
     -h|--help)
         usage
         exit 0
