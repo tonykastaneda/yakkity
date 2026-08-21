@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>yakkity — fzf for your coding agent sessions</title>
+<meta name="description" content="yakkity installs yakk: an fzf interface for finding, resuming, and handing off local Claude Code, Codex, Cursor Agent, and Grok sessions.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='18' fill='%2317171a'/%3E%3Ctext x='50' y='68' font-family='monospace' font-size='58' font-weight='700' fill='%237bcf00' text-anchor='middle'%3E%3E%3C/text%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #17171a;
+    --card: #1c1c20;
+    --text: #f5f5f5;
+    --text2: #d4d4d4;
+    --muted: #8a8a8f;
+    --faint: #5a5a60;
+    --border: #2c2c32;
+    --border-soft: #232328;
+    --accent: #7bcf00;
+    --accent-dim: #7bcf0026;
+    --claude: #e8823c;
+    --codex: #4d9fff;
+    --grok: #57d38c;
+    --cursor: #7fa8d9;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Menlo", "Consolas", "Liberation Mono", monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { background: var(--bg); }
+
+  body {
+    position: relative;
+    overflow-x: hidden;
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 14px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: var(--text2); text-decoration: none; transition: color .15s ease; }
+  a:hover { color: var(--text); }
+
+  .wrap {
+    position: relative;
+    z-index: 1;
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  header.site {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 28px 0 0;
+  }
+
+  .wordmark {
+    display: block;
+    line-height: 0;
+  }
+  .wordmark img {
+    height: 29.26px;
+    width: auto;
+    display: block;
+  }
+
+  .gh-link {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    color: var(--faint);
+    transition: color .15s ease, border-color .15s ease;
+  }
+  .gh-link:hover { color: var(--text2); border-color: var(--border-soft); }
+  .gh-link svg { width: 16px; height: 16px; }
+
+  main { padding-bottom: 80px; }
+
+  /* Hero */
+  .hero { padding-top: 72px; }
+
+  h1 {
+    font-size: 28px;
+    line-height: 1.35;
+    font-weight: 500;
+    margin: 0 0 22px;
+    letter-spacing: -0.01em;
+  }
+  h1 .accent {
+    color: var(--accent);
+    font-weight: 900;
+    -webkit-text-stroke: 0.6px currentColor;
+    display: inline-block;
+    position: relative;
+  }
+  h1 .accent::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -6px;
+    height: 2px;
+    background: var(--accent);
+    opacity: .55;
+  }
+
+  .platform-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    border: 1px solid var(--border);
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    color: var(--muted);
+    font-size: 12px;
+    background: var(--card);
+  }
+
+  .codebox {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border: 1px solid var(--border);
+    border-radius: 0 6px 6px 6px;
+    background: var(--card);
+    padding: 14px 16px;
+  }
+  .codebox code {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text2);
+    overflow-x: auto;
+    white-space: pre;
+  }
+  .codebox .dollar, .cmdlist .dollar { color: var(--accent); margin-right: 10px; user-select: none; }
+
+  .copy-btn {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--faint);
+    cursor: pointer;
+    transition: color .15s ease, border-color .15s ease;
+  }
+  .copy-btn:hover { color: var(--text2); border-color: var(--border-soft); }
+  .copy-btn svg { width: 14px; height: 14px; pointer-events: none; }
+  .copy-btn.copied { color: var(--grok); }
+
+  .alt-install {
+    margin-top: 14px;
+    color: var(--muted);
+    font-size: 12.5px;
+  }
+  .alt-install code {
+    color: var(--text2);
+    font-family: var(--mono);
+  }
+
+  /* Terminal window mockup */
+  .term {
+    margin-top: 40px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    background: #060606;
+  }
+  .term-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border-soft);
+    background: var(--card);
+  }
+  .term-bar .dot { width: 9px; height: 9px; border-radius: 50%; }
+  .term-bar .dot.red { background: #ff5f57; }
+  .term-bar .dot.yellow { background: #febc2e; }
+  .term-bar .dot.green { background: #28c840; }
+  .term-bar .title {
+    margin-left: 10px;
+    font-size: 11.5px;
+    color: var(--faint);
+  }
+  .term-body {
+    padding: 18px 16px 16px;
+    font-size: 12.5px;
+    overflow-x: auto;
+  }
+  .term-body .line { white-space: pre; color: var(--text2); }
+  .term-body .prompt { color: var(--accent); }
+  .term-row {
+    display: grid;
+    grid-template-columns: 64px 108px 1fr;
+    gap: 14px;
+    padding: 3px 6px;
+    border-radius: 4px;
+    white-space: nowrap;
+  }
+  .term-row.header { color: var(--faint); font-size: 11px; margin-top: 10px; }
+  .term-row.selected { background: var(--accent-dim); }
+  .term-row .agent { font-weight: 500; }
+  .term-row .agent.claude { color: var(--claude); }
+  .term-row .agent.codex { color: var(--codex); }
+  .term-row .agent.cursor { color: var(--cursor); }
+  .term-row .agent.grok { color: var(--grok); }
+  .term-row .time { color: var(--muted); }
+  .term-row .conv { color: var(--text2); overflow: hidden; text-overflow: ellipsis; }
+  .term-row.selected .conv { color: var(--text); }
+  .term-footer {
+    margin-top: 14px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border-soft);
+    color: var(--faint);
+    font-size: 11px;
+  }
+
+  .cmdlist {
+    margin-top: 40px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--card);
+    padding: 18px 20px;
+  }
+  .cmdlist .row {
+    display: flex;
+    gap: 4px;
+    padding: 5px 0;
+    font-size: 13px;
+  }
+  .cmdlist code { color: var(--text2); }
+  .cmdlist .desc { color: var(--faint); margin-left: auto; padding-left: 16px; text-align: right; }
+
+  /* Sections */
+  section.feature {
+    margin-top: 72px;
+    padding-top: 40px;
+    border-top: 1px solid var(--border-soft);
+  }
+  section.feature h2 {
+    font-size: 17px;
+    font-weight: 500;
+    margin: 0 0 8px;
+    letter-spacing: -0.01em;
+  }
+  section.feature p.sub {
+    margin: 0 0 24px;
+    color: var(--muted);
+    font-size: 13.5px;
+  }
+
+  .mini-term {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #060606;
+    padding: 16px 18px;
+    font-size: 12.5px;
+    overflow-x: auto;
+  }
+  .mini-term .line { white-space: pre; color: var(--text2); margin: 2px 0; }
+  .mini-term .prompt { color: var(--accent); }
+  .mini-term .dim { color: var(--faint); }
+  .mini-term .bold { color: var(--text); font-weight: 500; }
+  .mini-term .green { color: var(--grok); }
+
+  /* Agent grid */
+  .agent-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .agent-tile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 22px 8px;
+    border-right: 1px solid var(--border-soft);
+    background: var(--card);
+    font-size: 12px;
+    color: var(--text2);
+    text-align: center;
+  }
+  .agent-tile:last-child { border-right: none; }
+  .agent-tile .swatch { width: 9px; height: 9px; border-radius: 50%; }
+  .agent-tile .swatch.claude { background: var(--claude); }
+  .agent-tile .swatch.codex { background: var(--codex); }
+  .agent-tile .swatch.cursor { background: var(--cursor); }
+  .agent-tile .swatch.grok { background: var(--grok); }
+
+  /* Requirements */
+  .req-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 8px;
+  }
+  .req-list li {
+    position: relative;
+    padding-left: 18px;
+    color: var(--text2);
+    font-size: 13px;
+  }
+  .req-list li::before {
+    content: "-";
+    position: absolute;
+    left: 0;
+    color: var(--faint);
+  }
+  .req-list code { color: var(--accent); font-size: 12.5px; }
+
+  .yak-watermark {
+    position: absolute;
+    right: -40px;
+    bottom: 0;
+    width: clamp(288px, 38vw, 624px);
+    aspect-ratio: 54.3 / 43.275;
+    overflow: hidden;
+    transform: translateX(10%);
+    pointer-events: none;
+    user-select: none;
+  }
+  .yak-watermark img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  footer.site {
+    margin-top: 72px;
+    padding: 24px 0 40px;
+    border-top: 1px solid var(--border-soft);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: var(--faint);
+    font-size: 11.5px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  footer.site .links { display: flex; gap: 18px; }
+
+  @media (max-width: 620px) {
+    h1 { font-size: 23px; }
+    .term-row { grid-template-columns: 52px 84px 1fr; gap: 8px; }
+    .agent-grid { grid-template-columns: repeat(2, 1fr); }
+    .agent-tile:nth-child(2) { border-right: none; }
+    .agent-tile:nth-child(1), .agent-tile:nth-child(2) { border-bottom: 1px solid var(--border-soft); }
+    .cmdlist .row { flex-direction: column; gap: 2px; }
+    .cmdlist .desc { text-align: left; padding-left: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="site">
+    <a class="wordmark" href="/"><img src="assets/logo.svg" alt="yakkity"></a>
+    <a class="gh-link" href="https://github.com/tonykastaneda/yakkity" aria-label="yakkity on GitHub" target="_blank" rel="noopener">
+      <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+    </a>
+  </header>
+
+  <main>
+    <section class="hero">
+      <h1 id="hero-heading">Break up with your <span class="accent">ex</span> again.</h1>
+      <script>
+      (function () {
+        var variants = [
+          'Break up with your <span class="accent">ex</span> again.',
+          'For the terminal <span class="accent">larpers</span>.',
+          'Yakk off in the <span class="accent">DMs</span>.',
+          'Nudes, but arguably <span class="accent">more useful</span>.',
+          'Take a yakk.<br>And <span class="accent">hit the sack</span>.',
+          'Yakkass 4 ever <span class="accent">♥</span>',
+          'Probably could\'ve made this yourself.<br><span class="accent">Award.</span>',
+          'Success is 1% inspiration, 98% perspiration, and <span class="accent">2% attention to detail</span>.',
+          'Never let a coding agent tell you <span class="accent">you\'re wrong</span>.'
+        ];
+        var h1 = document.getElementById('hero-heading');
+        if (h1) h1.innerHTML = variants[Math.floor(Math.random() * variants.length)];
+      })();
+      </script>
+
+      <div>
+        <span class="platform-pill">macOS · Zsh</span>
+        <div class="codebox">
+          <code><span class="dollar">$</span>curl -fsSL https://yakkity.dev/install | bash</code>
+          <button class="copy-btn" data-copy="curl -fsSL https://yakkity.dev/install | bash" aria-label="Copy install command">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><rect x="5.5" y="5.5" width="8.5" height="8.5" rx="1.5"/><path d="M10.5 5.5V3.5a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2"/></svg>
+          </button>
+        </div>
+        <p class="alt-install">or via Homebrew: <code>brew install tonykastaneda/tap/yakkity</code></p>
+      </div>
+
+      <div class="term">
+        <div class="term-bar">
+          <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
+          <span class="title">yakk</span>
+        </div>
+        <div class="term-body">
+          <div class="line"><span class="prompt">❯</span> yakk</div>
+          <div class="term-row header"><span>Agent</span><span>Time</span><span>Conversation</span></div>
+          <div class="term-row"><span class="agent claude">Claude</span><span class="time">2 hours ago</span><span class="conv">Debug flaky auth test suite</span></div>
+          <div class="term-row"><span class="agent codex">Codex</span><span class="time">5 hours ago</span><span class="conv">Refactor payment webhook handler</span></div>
+          <div class="term-row selected"><span class="agent cursor">Cursor</span><span class="time">1 day ago</span><span class="conv">Draft README for new CLI tool</span></div>
+          <div class="term-row"><span class="agent grok">Grok</span><span class="time">3 days ago</span><span class="conv">Explore GraphQL schema migration</span></div>
+          <div class="term-footer">↑↓ navigate&nbsp;&nbsp;|&nbsp;&nbsp;ENTER resume&nbsp;&nbsp;|&nbsp;&nbsp;ESC quit&nbsp;&nbsp;&nbsp;&nbsp;Resume&gt; </div>
+        </div>
+      </div>
+
+      <div class="cmdlist">
+        <div class="row"><code><span class="dollar">$</span>yakk</code><span class="desc">resume a session in its original agent</span></div>
+        <div class="row"><code><span class="dollar">$</span>yakk --list</code><span class="desc">list the 10 most recent conversations</span></div>
+        <div class="row"><code><span class="dollar">$</span>yakk -off</code><span class="desc">compact cross-agent handoff</span></div>
+        <div class="row"><code><span class="dollar">$</span>yakk -ass</code><span class="desc">full sanitized cross-agent handoff</span></div>
+        <div class="row"><code><span class="dollar">$</span>yakk --help</code><span class="desc">show usage</span></div>
+      </div>
+    </section>
+
+    <section class="feature">
+      <h2>One picker, every agent</h2>
+      <p class="sub">yakk scans Claude Code, Codex, Cursor Agent, and Grok at once and resumes the exact CLI each session came from.</p>
+      <div class="mini-term">
+        <div class="line dim">Resume&gt; draft readme</div>
+        <div class="line"><span class="prompt">❯</span> cursor-agent --resume 8f2a... --workspace ~/code/yakkity</div>
+        <div class="line bold">Resuming</div>
+        <div class="line dim">Draft README for new CLI tool</div>
+      </div>
+    </section>
+
+    <section class="feature">
+      <h2>Hand off context between agents</h2>
+      <p class="sub">Started in one agent, want a second opinion in another? <code>yakk -off</code> and <code>yakk -ass</code> summarize the conversation and hand it to a different agent — no reasoning, tool calls, or attachments carried over.</p>
+      <div class="mini-term">
+        <div class="line"><span class="prompt">❯</span> yakk -ass</div>
+        <div class="line bold">Handing off to Codex</div>
+        <div class="line dim">Debug flaky auth test suite</div>
+        <div class="line dim">Estimated transferred context: ~12,480 tokens</div>
+        <div class="line green">✓ codex resume --from handoff</div>
+      </div>
+    </section>
+
+    <section class="feature">
+      <h2>Supported agents</h2>
+      <p class="sub">Only agents whose CLI tools are installed show up as handoff targets.</p>
+      <div class="agent-grid">
+        <div class="agent-tile"><span class="swatch claude"></span>Claude Code</div>
+        <div class="agent-tile"><span class="swatch codex"></span>Codex</div>
+        <div class="agent-tile"><span class="swatch cursor"></span>Cursor Agent</div>
+        <div class="agent-tile"><span class="swatch grok"></span>Grok</div>
+      </div>
+    </section>
+
+    <section class="feature">
+      <h2>Requirements</h2>
+      <ul class="req-list">
+        <li>macOS</li>
+        <li>Zsh</li>
+        <li><code>fzf</code> 0.74.3 or newer</li>
+        <li><code>jq</code></li>
+        <li>At least one supported agent CLI: <code>claude</code>, <code>codex</code>, <code>cursor-agent</code>, or <code>grok</code></li>
+      </ul>
+    </section>
+  </main>
+
+  <footer class="site">
+    <span>&copy; 2026 yakkity &middot; MIT License</span>
+    <span class="links">
+      <a href="https://github.com/tonykastaneda/yakkity">GitHub</a>
+      <a href="https://github.com/tonykastaneda/yakkity#readme">Docs</a>
+      <a href="https://yakkity.dev/uninstall">Uninstall</a>
+    </span>
+  </footer>
+
+</div>
+
+<div class="yak-watermark"><img src="assets/yak-icon.svg" alt="" aria-hidden="true"></div>
+
+<script>
+document.querySelectorAll('.copy-btn').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    var text = btn.getAttribute('data-copy');
+    navigator.clipboard.writeText(text).then(function () {
+      btn.classList.add('copied');
+      setTimeout(function () { btn.classList.remove('copied'); }, 1200);
+    });
+  });
+});
+</script>
+</body>
+</html>
