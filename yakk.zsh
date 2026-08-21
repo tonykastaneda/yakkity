@@ -12,8 +12,8 @@ Usage: yakk [OPTION]
 
   (no option)  Resume the selected conversation in its original agent
   -l, --list   List the 10 most recent conversations
-  -off         Hand off compact context to a different agent
-  -ass
+  --off        Hand off compact context to a different agent
+  --ass
                Hand off the full sanitized conversation to a different agent
   -h, --help   Show this help
   -v, --version
@@ -26,8 +26,8 @@ HANDOFF_MODE=""
 case "${1:-}" in
     "") ;;
     -l|--list) ;;
-    -off) HANDOFF_MODE="compact" ;;
-    -ass) HANDOFF_MODE="full" ;;
+    --off) HANDOFF_MODE="compact" ;;
+    --ass) HANDOFF_MODE="full" ;;
     -h|--help)
         usage
         exit 0

@@ -9,8 +9,8 @@ also start a new session in one agent using context from another.
 ```text
 yakk             Resume a selected conversation in its original agent
 yakk --list      List the 10 most recent conversations
-yakk -off        Compact cross-agent handoff
-yakk -ass
+yakk --off       Compact cross-agent handoff
+yakk --ass
                  Full sanitized cross-agent handoff
 yakk --help      Show usage
 yakk --version   Show the installed version

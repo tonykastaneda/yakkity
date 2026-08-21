@@ -434,8 +434,8 @@
       <div class="cmdlist">
         <div class="row"><code><span class="dollar">$</span>yakk</code><span class="desc">resume a session in its original agent</span></div>
         <div class="row"><code><span class="dollar">$</span>yakk --list</code><span class="desc">list the 10 most recent conversations</span></div>
-        <div class="row"><code><span class="dollar">$</span>yakk -off</code><span class="desc">compact cross-agent handoff</span></div>
-        <div class="row"><code><span class="dollar">$</span>yakk -ass</code><span class="desc">full sanitized cross-agent handoff</span></div>
+        <div class="row"><code><span class="dollar">$</span>yakk --off</code><span class="desc">compact cross-agent handoff</span></div>
+        <div class="row"><code><span class="dollar">$</span>yakk --ass</code><span class="desc">full sanitized cross-agent handoff</span></div>
         <div class="row"><code><span class="dollar">$</span>yakk --help</code><span class="desc">show usage</span></div>
       </div>
     </section>
@@ -453,9 +453,9 @@
 
     <section class="feature">
       <h2>Hand off context between agents</h2>
-      <p class="sub">Started in one agent, want a second opinion in another? <code>yakk -off</code> and <code>yakk -ass</code> summarize the conversation and hand it to a different agent — no reasoning, tool calls, or attachments carried over.</p>
+      <p class="sub">Started in one agent, want a second opinion in another? <code>yakk --off</code> and <code>yakk --ass</code> summarize the conversation and hand it to a different agent — no reasoning, tool calls, or attachments carried over.</p>
       <div class="mini-term">
-        <div class="line"><span class="prompt">❯</span> yakk -ass</div>
+        <div class="line"><span class="prompt">❯</span> yakk --ass</div>
         <div class="line bold">Handing off to Codex</div>
         <div class="line dim">Debug flaky auth test suite</div>
         <div class="line dim">Estimated transferred context: ~12,480 tokens</div>
