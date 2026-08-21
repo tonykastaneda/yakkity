@@ -1,8 +1,8 @@
 # yakkity
 
-`yakkity` installs the `yakk` command: an `fzf` interface for finding and
-resuming local Claude Code, Codex, Cursor Agent, and Grok sessions. It can also
-start a new session in one agent using sanitized context from another.
+You probably could've built this yourself. `yakkity` is an `fzf` interface
+that searches local coding agent sessions and resumes them for you. It can
+also start a new session in one agent using context from another.
 
 ## Commands
 
