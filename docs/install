@@ -3,5 +3,5 @@
 set -eu
 
 curl --proto '=https' --tlsv1.2 -fsSL \
-    https://raw.githubusercontent.com/tonykastaneda/yakkity/v0.2.1/install.sh |
+    https://raw.githubusercontent.com/tonykastaneda/yakkity/v0.2.2/install.sh |
     bash -s -- "$@"

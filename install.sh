@@ -3,10 +3,11 @@
 set -eu
 
 PROGRAM="yakkity"
-DEFAULT_VERSION="0.2.1"
+DEFAULT_VERSION="0.2.2"
 DEFAULT_PREFIX="${HOME}/.local"
 REPOSITORY="tonykastaneda/yakkity"
 YAKK_SHA256_0_2_1="cffda1de85aedc865fa69669eea5376c562ebb006eb2f8a197ebb254366d6cbf"
+YAKK_SHA256_0_2_2="727636ba27852af08df694e4eb9b6e9274edd061aa858e261d645c6ee8e8e5d7"
 
 VERSION="$DEFAULT_VERSION"
 PREFIX="$DEFAULT_PREFIX"
@@ -17,7 +18,7 @@ usage() {
 Usage: install.sh [OPTIONS]
 
   --yes              Install missing Homebrew dependencies without prompting
-  --version VERSION  Install a specific yakkity version (default: 0.2.1)
+  --version VERSION  Install a specific yakkity version (default: 0.2.2)
   --prefix PATH      Installation prefix (default: ~/.local)
   -h, --help         Show this help
 EOF
@@ -57,6 +58,7 @@ done
 }
 
 case "$VERSION" in
+    0.2.2) YAKK_SHA256="$YAKK_SHA256_0_2_2" ;;
     0.2.1) YAKK_SHA256="$YAKK_SHA256_0_2_1" ;;
     *)
         echo "No trusted checksum is embedded for yakkity $VERSION." >&2
