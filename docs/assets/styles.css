@@ -219,6 +219,19 @@
   }
   .term-body .line { white-space: pre; color: var(--text2); }
   .term-body .prompt { color: var(--accent); }
+  .terminal-cursor {
+    display: inline-block;
+    width: 7px;
+    height: 1.1em;
+    margin-left: 2px;
+    background: var(--text2);
+    vertical-align: -.18em;
+    animation: terminal-blink .8s steps(1, end) infinite;
+  }
+  .terminal-cursor[hidden] { display: none; }
+  @keyframes terminal-blink { 50% { opacity: 0; } }
+  .fzf-demo[hidden] { display: none; }
+  .term-results { min-height: 145px; }
   .term-row {
     display: grid;
     grid-template-columns: 64px 150px 180px minmax(0, 1fr);
@@ -244,6 +257,12 @@
     border-top: 1px solid var(--border-soft);
     color: var(--faint);
     font-size: 11px;
+  }
+  .term-footer .resume-label { color: var(--text2); }
+  .term-empty { padding: 12px 6px; color: var(--faint); font-size: 11px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .terminal-cursor { animation: none; }
   }
 
   .cmdlist {

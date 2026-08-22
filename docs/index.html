@@ -62,14 +62,13 @@
           <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
           <span class="title">yakk</span>
         </div>
-        <div class="term-body">
-          <div class="line"><span class="prompt">❯</span> yakk</div>
-          <div class="term-row header"><span>Agent</span><span>Time</span><span>Project</span><span class="conv">Conversation</span></div>
-          <div class="term-row selected"><span class="agent grok">Grok</span><span class="time">2026-08-21 09:35 AM</span><span class="project">yakkity → yakkity</span><span class="conv">yakk resume now cds into session project</span></div>
-          <div class="term-row"><span class="agent claude">Claude</span><span class="time">2026-08-21 09:27 AM</span><span class="project">yakkity → screenshots</span><span class="conv">lets start scaffolding out the website</span></div>
-          <div class="term-row"><span class="agent codex">Codex</span><span class="time">2026-08-21 12:33 AM</span><span class="project">tonycastaneda → tonycastaneda</span><span class="conv">is ssh installed on this computer</span></div>
-          <div class="term-row"><span class="agent claude">Claude</span><span class="time">2026-08-21 12:14 AM</span><span class="project">yakkity → yakkity</span><span class="conv">can we push any changes from the dotfiles</span></div>
-          <div class="term-footer">↑↓ navigate&nbsp;&nbsp;|&nbsp;&nbsp;ENTER resume&nbsp;&nbsp;|&nbsp;&nbsp;ESC quit&nbsp;&nbsp;&nbsp;&nbsp;Resume&gt; </div>
+        <div class="term-body" id="yakk-demo" aria-label="Animated demonstration of searching yakk sessions">
+          <div class="line"><span class="prompt">❯</span> <span id="demo-command"></span><span class="terminal-cursor" id="command-cursor" aria-hidden="true"></span></div>
+          <div class="fzf-demo" id="fzf-demo" hidden>
+            <div class="term-row header"><span>Agent</span><span>Time</span><span>Project</span><span class="conv">Conversation</span></div>
+            <div class="term-results" id="demo-results"></div>
+            <div class="term-footer">↑↓ navigate&nbsp;&nbsp;|&nbsp;&nbsp;ENTER resume&nbsp;&nbsp;|&nbsp;&nbsp;ESC quit&nbsp;&nbsp;&nbsp;&nbsp;<span class="resume-label">Resume&gt;</span> <span id="demo-query"></span><span class="terminal-cursor" id="query-cursor" aria-hidden="true"></span></div>
+          </div>
         </div>
       </div>
 
@@ -160,6 +159,102 @@ document.querySelectorAll('.tab').forEach(function (tab) {
     document.getElementById('install-copy-btn').setAttribute('data-copy', cmd);
   });
 });
+
+(function () {
+  var sessions = [
+    { agent: 'Grok', kind: 'grok', time: '18 min ago', project: 'yakkity → yakkity', conversation: 'yakk resume now cds into session project' },
+    { agent: 'Claude', kind: 'claude', time: '42 min ago', project: 'yakkity → screenshots', conversation: 'scaffold the new landing page animation' },
+    { agent: 'Codex', kind: 'codex', time: '1 hour ago', project: 'api → auth', conversation: 'debug flaky auth test suite' },
+    { agent: 'Claude', kind: 'claude', time: '2 hours ago', project: 'dotfiles → shell', conversation: 'clean up the zsh configuration' },
+    { agent: 'Codex', kind: 'codex', time: '2 hours ago', project: 'yakkity → website', conversation: 'add pricing and docs navigation' },
+    { agent: 'Cursor', kind: 'cursor', time: '3 hours ago', project: 'portfolio → frontend', conversation: 'fix mobile card overflow' },
+    { agent: 'Claude', kind: 'claude', time: 'yesterday', project: 'notes → research', conversation: 'summarize terminal interface ideas' },
+    { agent: 'Codex', kind: 'codex', time: 'yesterday', project: 'installer → windows', conversation: 'implement native powershell support' }
+  ];
+  var command = document.getElementById('demo-command');
+  var commandCursor = document.getElementById('command-cursor');
+  var fzf = document.getElementById('fzf-demo');
+  var results = document.getElementById('demo-results');
+  var query = document.getElementById('demo-query');
+  var queryCursor = document.getElementById('query-cursor');
+  if (!command || !results || !query) return;
+
+  function wait(ms) { return new Promise(function (resolve) { setTimeout(resolve, ms); }); }
+  function sessionText(session) { return [session.agent, session.time, session.project, session.conversation].join(' ').toLowerCase(); }
+  function matches(session, value) {
+    var terms = value.toLowerCase().trim().split(/\s+/).filter(Boolean);
+    return terms.every(function (term) { return sessionText(session).indexOf(term) !== -1; });
+  }
+  function render(value, limit) {
+    var filtered = sessions.filter(function (session) { return matches(session, value); });
+    if (typeof limit === 'number') filtered = filtered.slice(0, limit);
+    results.innerHTML = '';
+    filtered.slice(0, 5).forEach(function (session, index) {
+      var row = document.createElement('div');
+      row.className = 'term-row' + (index === 0 ? ' selected' : '');
+      row.innerHTML = '<span class="agent ' + session.kind + '">' + session.agent + '</span>' +
+        '<span class="time">' + session.time + '</span>' +
+        '<span class="project">' + session.project + '</span>' +
+        '<span class="conv">' + session.conversation + '</span>';
+      results.appendChild(row);
+    });
+    if (!filtered.length) results.innerHTML = '<div class="term-empty">0 sessions</div>';
+  }
+  async function typeInto(element, value, speed) {
+    for (var i = 1; i <= value.length; i += 1) {
+      element.textContent = value.slice(0, i);
+      if (element === query) render(element.textContent);
+      await wait(speed + Math.random() * 45);
+    }
+  }
+  async function erase(element) {
+    while (element.textContent.length) {
+      element.textContent = element.textContent.slice(0, -1);
+      if (element === query) render(element.textContent);
+      await wait(35);
+    }
+  }
+  async function runDemo() {
+    command.textContent = '';
+    query.textContent = '';
+    results.innerHTML = '';
+    fzf.hidden = true;
+    commandCursor.hidden = false;
+    queryCursor.hidden = true;
+    await wait(700);
+    await typeInto(command, 'yakk', 130);
+    await wait(350);
+    commandCursor.hidden = true;
+    fzf.hidden = false;
+    for (var count = 1; count <= 5; count += 1) { render('', count); await wait(170); }
+    queryCursor.hidden = false;
+    await wait(850);
+    await typeInto(query, 'auth test', 95);
+    await wait(1300);
+    await erase(query);
+    await typeInto(query, 'claude', 100);
+    await wait(1300);
+    await erase(query);
+    await typeInto(query, 'codex', 100);
+    await wait(1300);
+    await erase(query);
+    await typeInto(query, '2 hours ago', 95);
+    await wait(1800);
+    await erase(query);
+    await wait(900);
+    runDemo();
+  }
+
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    command.textContent = 'yakk';
+    commandCursor.hidden = true;
+    fzf.hidden = false;
+    query.textContent = '2 hours ago';
+    render(query.textContent);
+  } else {
+    runDemo();
+  }
+}());
 </script>
 </body>
 </html>
