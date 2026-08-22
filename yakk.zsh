@@ -12,6 +12,7 @@ Usage: yakk [OPTION]
 
   (no option)  Resume the selected conversation in its original agent
   -l, --list   List the 10 most recent conversations
+  --listN      List the N most recent conversations (for example, --list25)
   --off, -off  Hand off compact context to a different agent
   --ass, -ass
                Hand off the full sanitized conversation to a different agent
@@ -36,10 +37,20 @@ WORKER_NAME=""
 SPAWN_AGENT=""
 SPAWN_TASK=""
 LIST_MODE="false"
+LIST_LIMIT=10
 
 case "${1:-}" in
     "") ;;
     -l|--list) LIST_MODE="true" ;;
+    --list*)
+        LIST_LIMIT="${1#--list}"
+        if [[ ! "$LIST_LIMIT" =~ '^[1-9][0-9]*$' ]]; then
+            echo "Invalid list limit: ${LIST_LIMIT:-empty}" >&2
+            echo "Use --list followed by a positive integer, such as --list25." >&2
+            exit 2
+        fi
+        LIST_MODE="true"
+        ;;
     --off|-off) HANDOFF_MODE="compact" ;;
     --ass|-ass) HANDOFF_MODE="full" ;;
     --spawn-herdr|--spawn-term)
@@ -1030,7 +1041,7 @@ if [[ -z "$meta_raw" ]]; then
 fi
 
 # ------------------------------------------------------------
-# --list / -l: print the 10 most recent conversations and exit.
+# --list / -l / --listN: print the requested number of recent conversations.
 # Reuses the same scan -> sort -> emit_rows pipeline as the fzf
 # picker below, so the per-provider title-dispatch logic exists
 # in exactly one place. `head -10` closing early also naturally
@@ -1043,7 +1054,7 @@ if [[ "$LIST_MODE" == "true" ]]; then
     printf '%s\n' "$meta_raw" |
         sort -t $'\t' -k1,1rn |
         emit_rows |
-        head -10 |
+        head -n "$LIST_LIMIT" |
         while IFS=$'\t' read -r provider mtime title id project workspace; do
             printf "%-8s  %-19s  %-32s  %-50s\n" \
                 "$provider" \
