@@ -63,11 +63,11 @@
           <span class="title">yakk</span>
         </div>
         <div class="term-body" id="yakk-demo" aria-label="Animated demonstration of searching yakk sessions">
-          <div class="line"><span class="prompt">❯</span> <span id="demo-command"></span><span class="terminal-cursor" id="command-cursor" aria-hidden="true"></span></div>
+          <div class="line demo-input-line"><span class="prompt" id="demo-prefix">❯</span> <span id="demo-input"></span><span class="terminal-cursor" id="demo-cursor" aria-hidden="true"></span></div>
           <div class="fzf-demo" id="fzf-demo" hidden>
             <div class="term-row header"><span>Agent</span><span>Time</span><span>Project</span><span class="conv">Conversation</span></div>
             <div class="term-results" id="demo-results"></div>
-            <div class="term-footer">↑↓ navigate&nbsp;&nbsp;|&nbsp;&nbsp;ENTER resume&nbsp;&nbsp;|&nbsp;&nbsp;ESC quit&nbsp;&nbsp;&nbsp;&nbsp;<span class="resume-label">Resume&gt;</span> <span id="demo-query"></span><span class="terminal-cursor" id="query-cursor" aria-hidden="true"></span></div>
+            <div class="term-footer">↑↓ navigate&nbsp;&nbsp;|&nbsp;&nbsp;ENTER resume&nbsp;&nbsp;|&nbsp;&nbsp;ESC quit</div>
           </div>
         </div>
       </div>
@@ -171,13 +171,12 @@ document.querySelectorAll('.tab').forEach(function (tab) {
     { agent: 'Claude', kind: 'claude', time: 'yesterday', project: 'notes → research', conversation: 'summarize terminal interface ideas' },
     { agent: 'Codex', kind: 'codex', time: 'yesterday', project: 'installer → windows', conversation: 'implement native powershell support' }
   ];
-  var command = document.getElementById('demo-command');
-  var commandCursor = document.getElementById('command-cursor');
+  var input = document.getElementById('demo-input');
+  var prefix = document.getElementById('demo-prefix');
+  var cursor = document.getElementById('demo-cursor');
   var fzf = document.getElementById('fzf-demo');
   var results = document.getElementById('demo-results');
-  var query = document.getElementById('demo-query');
-  var queryCursor = document.getElementById('query-cursor');
-  if (!command || !results || !query) return;
+  if (!input || !prefix || !cursor || !results) return;
 
   function wait(ms) { return new Promise(function (resolve) { setTimeout(resolve, ms); }); }
   function sessionText(session) { return [session.agent, session.time, session.project, session.conversation].join(' ').toLowerCase(); }
@@ -200,57 +199,57 @@ document.querySelectorAll('.tab').forEach(function (tab) {
     });
     if (!filtered.length) results.innerHTML = '<div class="term-empty">0 sessions</div>';
   }
-  async function typeInto(element, value, speed) {
+  async function typeInto(value, speed, filterResults) {
     for (var i = 1; i <= value.length; i += 1) {
-      element.textContent = value.slice(0, i);
-      if (element === query) render(element.textContent);
+      input.textContent = value.slice(0, i);
+      if (filterResults) render(input.textContent);
       await wait(speed + Math.random() * 45);
     }
   }
-  async function erase(element) {
-    while (element.textContent.length) {
-      element.textContent = element.textContent.slice(0, -1);
-      if (element === query) render(element.textContent);
-      await wait(35);
+  async function erase() {
+    while (input.textContent.length) {
+      input.textContent = input.textContent.slice(0, -1);
+      render(input.textContent);
+      await wait(50);
     }
   }
   async function runDemo() {
-    command.textContent = '';
-    query.textContent = '';
+    prefix.textContent = '❯';
+    prefix.className = 'prompt';
+    input.textContent = '';
     results.innerHTML = '';
     fzf.hidden = true;
-    commandCursor.hidden = false;
-    queryCursor.hidden = true;
-    await wait(700);
-    await typeInto(command, 'yakk', 130);
-    await wait(350);
-    commandCursor.hidden = true;
+    cursor.hidden = false;
+    await wait(1000);
+    await typeInto('yakk', 180, false);
+    await wait(650);
+    prefix.textContent = 'Resume>';
+    prefix.className = 'resume-label';
+    input.textContent = '';
     fzf.hidden = false;
-    for (var count = 1; count <= 5; count += 1) { render('', count); await wait(170); }
-    queryCursor.hidden = false;
-    await wait(850);
-    await typeInto(query, 'auth test', 95);
-    await wait(1300);
-    await erase(query);
-    await typeInto(query, 'claude', 100);
-    await wait(1300);
-    await erase(query);
-    await typeInto(query, 'codex', 100);
-    await wait(1300);
-    await erase(query);
-    await typeInto(query, '2 hours ago', 95);
+    for (var count = 1; count <= 5; count += 1) { render('', count); await wait(250); }
+    await wait(1200);
+    await typeInto('auth test', 130, true);
     await wait(1800);
-    await erase(query);
-    await wait(900);
+    await erase();
+    await typeInto('claude', 140, true);
+    await wait(1800);
+    await erase();
+    await typeInto('codex', 140, true);
+    await wait(1800);
+    await erase();
+    await typeInto('2 hours ago', 130, true);
+    await wait(30000);
     runDemo();
   }
 
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    command.textContent = 'yakk';
-    commandCursor.hidden = true;
+    prefix.textContent = 'Resume>';
+    prefix.className = 'resume-label';
+    cursor.hidden = true;
     fzf.hidden = false;
-    query.textContent = '2 hours ago';
-    render(query.textContent);
+    input.textContent = '2 hours ago';
+    render(input.textContent);
   } else {
     runDemo();
   }
