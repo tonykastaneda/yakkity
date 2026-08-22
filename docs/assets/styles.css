@@ -76,25 +76,15 @@
   .site-nav {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 18px;
   }
   .nav-link {
-    display: inline-flex;
-    align-items: center;
-    height: 28px;
-    padding: 0 10px;
-    border: 1px solid var(--border-soft);
-    border-radius: 6px;
     color: var(--muted);
     font-size: 11px;
     letter-spacing: .04em;
-    transition: color .15s ease, border-color .15s ease, background .15s ease;
+    transition: color .15s ease;
   }
-  .nav-link:hover {
-    color: var(--text);
-    border-color: var(--border);
-    background: var(--card);
-  }
+  .nav-link:hover { color: var(--text); }
 
   main { padding-bottom: 80px; }
 
@@ -440,9 +430,7 @@
 
   /* Interior pages */
   .nav-link[aria-current="page"] {
-    color: var(--text);
-    background: var(--card);
-    border-color: var(--accent);
+    color: var(--accent);
   }
   .interior-page main { padding: 72px 0 80px; }
   .interior-page h1 {
