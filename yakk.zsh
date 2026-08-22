@@ -15,19 +15,64 @@ Usage: yakk [OPTION]
   --off, -off  Hand off compact context to a different agent
   --ass, -ass
                Hand off the full sanitized conversation to a different agent
+  --spawn-herdr --agent AGENT --task TEXT
+               Start a worker in a background Herdr tab
+  --spawn-term --agent AGENT --task TEXT
+               Start a worker in a new terminal window
+  --workers    List workers started by yakk
+  --collect NAME
+               Print a worker's result for the supervising agent
   -h, --help   Show this help
   -v, --version
                Show the installed version
+
+See yakk(1) for complete usage and Herdr orchestration guidance.
 EOF
 }
 
 HANDOFF_MODE=""
+ORCHESTRATION_MODE=""
+WORKER_NAME=""
+SPAWN_AGENT=""
+SPAWN_TASK=""
+LIST_MODE="false"
 
 case "${1:-}" in
     "") ;;
-    -l|--list) ;;
+    -l|--list) LIST_MODE="true" ;;
     --off|-off) HANDOFF_MODE="compact" ;;
     --ass|-ass) HANDOFF_MODE="full" ;;
+    --spawn-herdr|--spawn-term)
+        ORCHESTRATION_MODE="${1#--}"
+        shift
+        while (( $# > 0 )); do
+            case "$1" in
+                --agent)
+                    (( $# >= 2 )) || { echo "--agent requires a value" >&2; exit 2; }
+                    SPAWN_AGENT="$2"
+                    shift 2
+                    ;;
+                --task)
+                    (( $# >= 2 )) || { echo "--task requires a value" >&2; exit 2; }
+                    SPAWN_TASK="$2"
+                    shift 2
+                    ;;
+                *)
+                    echo "Unknown spawn option: $1" >&2
+                    exit 2
+                    ;;
+            esac
+        done
+        if [[ -z "$SPAWN_AGENT" || -z "$SPAWN_TASK" ]]; then
+            echo "Usage: yakk --spawn-{herdr,term} --agent AGENT --task TEXT" >&2
+            exit 2
+        fi
+        ;;
+    --workers) ORCHESTRATION_MODE="workers" ;;
+    --collect)
+        ORCHESTRATION_MODE="collect"
+        WORKER_NAME="${2:-}"
+        ;;
     -h|--help)
         usage
         exit 0
@@ -78,12 +123,12 @@ ensure_fzf() {
     fi
 }
 
-ensure_fzf
-
 CLAUDE_DIR="$HOME/.claude"
 CODEX_DIR="$HOME/.codex"
 CURSOR_DIR="$HOME/.cursor"
 GROK_DIR="$HOME/.grok"
+YAKK_STATE_DIR="${YAKK_STATE_DIR:-${TMPDIR:-/tmp}/yakkity-${UID:-user}}"
+YAKK_WORKERS_DIR="$YAKK_STATE_DIR/workers"
 
 BOLD=$'\033[1m'
 DIM=$'\033[2m'
@@ -276,10 +321,10 @@ sanitized_transcript() {
 }
 
 handoff_agent_picker() {
-    local source="$1" agent command_name
+    local source="$1" include_source="${2:-false}" agent command_name
 
     while IFS=$'\t' read -r agent command_name; do
-        [[ "$agent" == "$source" ]] && continue
+        [[ "$include_source" != "true" && "$agent" == "$source" ]] && continue
         command -v "$command_name" >/dev/null 2>&1 || continue
         printf '%s\t%s\n' "$agent" "$command_name"
     done <<'EOF' |
@@ -296,6 +341,89 @@ EOF
             --layout=reverse \
             --header="Available destination agents" \
             --footer=$'↑↓ navigate  |  ENTER hand off  |  ESC cancel'
+}
+
+agent_kind() {
+    case "$1" in
+        claude) echo "claude" ;;
+        codex) echo "codex" ;;
+        cursor-agent) echo "cursor" ;;
+        grok) echo "grok" ;;
+        *) return 1 ;;
+    esac
+}
+
+worker_destination() {
+    case "${1:l}" in
+        claude) printf 'Claude\tclaude\n' ;;
+        codex) printf 'Codex\tcodex\n' ;;
+        cursor|cursor-agent) printf 'Cursor\tcursor-agent\n' ;;
+        grok) printf 'Grok\tgrok\n' ;;
+        *) return 1 ;;
+    esac
+}
+
+worker_metadata_file() {
+    local name="$1"
+    [[ "$name" =~ '^[a-z][a-z0-9_-]{0,31}$' ]] || return 1
+    printf '%s/%s.json\n' "$YAKK_WORKERS_DIR" "$name"
+}
+
+list_workers() {
+    local metadata name kind transport created result_file state
+    local -a metadata_files
+
+    metadata_files=("$YAKK_WORKERS_DIR"/*.json(N.om))
+    if (( ${#metadata_files} == 0 )); then
+        echo "No yakk workers have been started."
+        return 0
+    fi
+
+    printf "%-32s  %-8s  %-12s  %-19s  %s\n" "Worker" "Agent" "Transport" "Created" "Result"
+    for metadata in "${metadata_files[@]}"; do
+        name="$(jq -r '.name' "$metadata")"
+        kind="$(jq -r '.kind' "$metadata")"
+        transport="$(jq -r '.transport // "herdr"' "$metadata")"
+        created="$(jq -r '.created_at' "$metadata")"
+        result_file="$(jq -r '.result_file' "$metadata")"
+        if [[ -s "$result_file" ]]; then
+            state="ready"
+        else
+            state="pending"
+        fi
+        printf "%-32s  %-8s  %-12s  %-19s  %s\n" "$name" "$kind" "$transport" "$created" "$state"
+    done
+}
+
+collect_worker() {
+    local name="$1" metadata result_file
+
+    if [[ -z "$name" ]]; then
+        echo "Usage: yakk --collect NAME" >&2
+        echo "Run yakk --workers to list worker names." >&2
+        return 2
+    fi
+
+    metadata="$(worker_metadata_file "$name")" || {
+        echo "Invalid worker name: $name" >&2
+        return 2
+    }
+
+    if [[ ! -f "$metadata" ]]; then
+        echo "Unknown worker: $name" >&2
+        return 1
+    fi
+
+    result_file="$(jq -r '.result_file' "$metadata")"
+    if [[ ! -s "$result_file" ]]; then
+        echo "Worker result is not ready: $name" >&2
+        echo "Check its Herdr pane or run yakk --workers." >&2
+        return 1
+    fi
+
+    printf '# Yakk worker result\n\n'
+    printf 'Worker: %s\n\n' "$name"
+    cat "$result_file"
 }
 
 create_handoff_file() {
@@ -332,6 +460,267 @@ create_handoff_file() {
     estimate_tokens=$(( ($(wc -c < "$handoff_file" | tr -d ' ') + 3) / 4 ))
     printf '%s\t%s\n' "$handoff_file" "$estimate_tokens"
 }
+
+current_session_context() {
+    local agent_json agent provider title workspace
+    local reference_kind reference_value session transcript
+
+    workspace="$PWD"
+    if [[ "${HERDR_ENV:-}" == "1" ]]; then
+        agent_json="$(herdr agent get "$HERDR_PANE_ID")" || return 1
+        agent="$(printf '%s\n' "$agent_json" | jq -r '.result.agent.agent // empty')"
+        workspace="$(printf '%s\n' "$agent_json" | jq -r '.result.agent.foreground_cwd // .result.agent.cwd // empty')"
+        reference_kind="$(printf '%s\n' "$agent_json" | jq -r '.result.agent.agent_session.kind // empty')"
+        reference_value="$(printf '%s\n' "$agent_json" | jq -r '.result.agent.agent_session.value // empty')"
+    elif [[ -n "${CODEX_THREAD_ID:-${CODEX_SESSION_ID:-}}" ]]; then
+        agent="codex"
+    elif [[ -n "${CLAUDE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-}}" ]]; then
+        agent="claude"
+    elif [[ -n "${CURSOR_SESSION_ID:-}" ]]; then
+        agent="cursor"
+    elif [[ -n "${GROK_SESSION_ID:-}" ]]; then
+        agent="grok"
+    else
+        echo "Could not identify the current supervising agent session exactly." >&2
+        echo "Run from a supported agent CLI that exposes its session ID, or use Herdr with its integration installed." >&2
+        return 1
+    fi
+
+    case "$agent" in
+        claude)
+            provider="Claude"
+            session="${CLAUDE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-}}"
+            ;;
+        codex)
+            provider="Codex"
+            session="${CODEX_THREAD_ID:-${CODEX_SESSION_ID:-}}"
+            ;;
+        cursor)
+            provider="Cursor"
+            session="${CURSOR_SESSION_ID:-}"
+            ;;
+        grok)
+            provider="Grok"
+            session="${GROK_SESSION_ID:-}"
+            ;;
+        *)
+            echo "The current session does not contain a supported supervising agent." >&2
+            return 1
+            ;;
+    esac
+
+    if [[ "$reference_kind" == "path" && -f "$reference_value" ]]; then
+        transcript="$reference_value"
+    elif [[ "$reference_kind" == "id" && -n "$reference_value" ]]; then
+        session="$reference_value"
+        transcript="$(session_transcript "$provider" "$session" "$workspace")"
+    elif [[ -n "$session" ]]; then
+        transcript="$(session_transcript "$provider" "$session" "$workspace")"
+    fi
+
+    if [[ -z "${transcript:-}" || ! -f "$transcript" ]]; then
+        echo "Could not identify the current $provider transcript exactly." >&2
+        if [[ "${HERDR_ENV:-}" == "1" ]]; then
+            echo "Install its Herdr integration so the pane reports agent session identity." >&2
+            echo "Run: herdr integration install ${agent}" >&2
+        else
+            echo "The supervising CLI did not expose a usable session ID." >&2
+        fi
+        return 1
+    fi
+
+    [[ -n "$session" ]] || session="$reference_value"
+    title="Current $provider conversation"
+    printf '%s\t%s\t%s\t%s\t%s\n' "$provider" "$title" "$session" "$workspace" "$transcript"
+}
+
+spawn_worker() {
+    local provider="$1" title="$2" session="$3" workspace="$4" transcript="$5"
+    local requested_agent="$6" task="$7" transport="$8"
+    local agent_selection destination destination_command kind
+    local handoff_result handoff_file estimate_tokens created_at epoch name
+    local result_file metadata_file tab_json tab_id="" pane_id="" worker_prompt
+    local launcher_file="" terminal_app="${YAKK_TERMINAL_APP:-Terminal}"
+
+    agent_selection="$(worker_destination "$requested_agent")" || {
+        echo "Unsupported worker agent: $requested_agent" >&2
+        echo "Choose claude, codex, cursor, or grok." >&2
+        return 2
+    }
+    IFS=$'\t' read -r destination destination_command <<< "$agent_selection"
+    if ! command -v "$destination_command" >/dev/null 2>&1; then
+        echo "$destination_command command not found." >&2
+        return 1
+    fi
+    kind="$(agent_kind "$destination_command")" || {
+        echo "Unsupported Herdr worker command: $destination_command" >&2
+        return 1
+    }
+
+    handoff_result="$(create_handoff_file compact "$provider" "$title" "$transcript")"
+    if [[ -z "$handoff_result" ]]; then
+        echo "No transferable user/assistant text was found in this session." >&2
+        return 1
+    fi
+    IFS=$'\t' read -r handoff_file estimate_tokens <<< "$handoff_result"
+
+    umask 077
+    mkdir -p "$YAKK_WORKERS_DIR" || {
+        rm -f "$handoff_file"
+        return 1
+    }
+
+    epoch="$(date +%s)"
+    created_at="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+    name="yakk-${kind}-${epoch}-${RANDOM}"
+    name="${name[1,32]}"
+    result_file="$YAKK_WORKERS_DIR/${name}.md"
+    launcher_file="$YAKK_WORKERS_DIR/${name}.command"
+    metadata_file="$(worker_metadata_file "$name")" || {
+        rm -f "$handoff_file"
+        return 1
+    }
+
+    worker_prompt="Read the sanitized conversation context at: ${handoff_file}
+
+Use it only as background for this assigned task:
+
+${task}
+
+Work in: ${workspace:-$PWD}
+
+Do not repeat the supplied transcript. Complete and verify the task. Before your final response, write a concise Markdown handoff to ${result_file}. Include the outcome, files changed, verification performed, commit/branch status, and any unresolved issues. Then delete ${handoff_file}."
+
+    if [[ "$transport" == "spawn-herdr" ]]; then
+        if [[ "${HERDR_ENV:-}" != "1" || -z "${HERDR_WORKSPACE_ID:-}" ]]; then
+            rm -f "$handoff_file"
+            echo "yakk --spawn-herdr must run inside a Herdr-managed pane." >&2
+            return 1
+        fi
+        if ! command -v herdr >/dev/null 2>&1; then
+            rm -f "$handoff_file"
+            echo "herdr command not found." >&2
+            return 1
+        fi
+        tab_json="$(herdr tab create \
+            --workspace "$HERDR_WORKSPACE_ID" \
+            --cwd "${workspace:-$PWD}" \
+            --label "$name" \
+            --no-focus)" || {
+            rm -f "$handoff_file"
+            return 1
+        }
+        tab_id="$(printf '%s\n' "$tab_json" | jq -r '.result.tab.tab_id')"
+        pane_id="$(printf '%s\n' "$tab_json" | jq -r '.result.root_pane.pane_id')"
+        if [[ -z "$pane_id" || "$pane_id" == "null" ]]; then
+            rm -f "$handoff_file"
+            echo "Herdr created a tab but did not return its root pane ID." >&2
+            return 1
+        fi
+    elif [[ "$transport" == "spawn-term" ]]; then
+        if [[ "$(uname -s)" != "Darwin" || ! -x /usr/bin/open ]]; then
+            rm -f "$handoff_file"
+            echo "yakk --spawn-term currently requires macOS." >&2
+            return 1
+        fi
+        {
+            printf '#!/bin/zsh\n'
+            printf 'cd -- %q\n' "${workspace:-$PWD}"
+            printf 'exec %q %q\n' "$destination_command" "$worker_prompt"
+        } > "$launcher_file"
+        chmod 700 "$launcher_file"
+        if [[ -n "${SSH_CONNECTION:-}${SSH_CLIENT:-}${SSH_TTY:-}" ]]; then
+            echo "Warning: SSH detected. The worker terminal will open on the remote Mac's desktop." >&2
+            echo "Use --spawn-herdr for a remotely visible worker." >&2
+        fi
+    else
+        rm -f "$handoff_file"
+        echo "Unsupported worker transport: $transport" >&2
+        return 2
+    fi
+
+    jq -n \
+        --arg name "$name" \
+        --arg kind "$kind" \
+        --arg transport "$transport" \
+        --arg created_at "$created_at" \
+        --arg source_provider "$provider" \
+        --arg source_session "$session" \
+        --arg source_title "$title" \
+        --arg workspace "$workspace" \
+        --arg task "$task" \
+        --arg tab_id "$tab_id" \
+        --arg pane_id "$pane_id" \
+        --arg result_file "$result_file" \
+        --arg launcher_file "$launcher_file" \
+        '{name: $name, kind: $kind, transport: $transport, created_at: $created_at,
+          source_provider: $source_provider, source_session: $source_session,
+          source_title: $source_title, workspace: $workspace, task: $task,
+          tab_id: $tab_id, pane_id: $pane_id, result_file: $result_file,
+          launcher_file: $launcher_file}' \
+        > "$metadata_file"
+
+    if [[ "$transport" == "spawn-herdr" ]]; then
+        if ! herdr agent start "$name" --kind "$kind" --pane "$pane_id"; then
+            rm -f "$handoff_file"
+            echo "The Herdr tab remains available for inspection: $tab_id" >&2
+            return 1
+        fi
+        if ! herdr agent prompt "$name" "$worker_prompt" \
+            --wait --until working --until idle --until done --timeout 10000; then
+            echo "Worker started but its task could not be submitted: $name" >&2
+            return 1
+        fi
+    elif ! /usr/bin/open -a "$terminal_app" "$launcher_file"; then
+        rm -f "$handoff_file"
+        echo "Could not open the worker in $terminal_app." >&2
+        return 1
+    fi
+
+    printf '\n%sWorker started%s\n' "$BOLD" "$RESET"
+    printf 'Name: %s\nAgent: %s\nTransport: %s\n' "$name" "$destination" "$transport"
+    if [[ "$transport" == "spawn-herdr" ]]; then
+        printf 'Tab: %s\nPane: %s\n' "$tab_id" "$pane_id"
+    else
+        printf 'Terminal: %s\n' "$terminal_app"
+    fi
+    printf 'Context: ~%s tokens\n' "$estimate_tokens"
+    printf 'Collect: yakk --collect %s\n' "$name"
+}
+
+if [[ "$ORCHESTRATION_MODE" == "workers" || "$ORCHESTRATION_MODE" == "collect" ]]; then
+    if ! command -v jq >/dev/null 2>&1; then
+        echo "jq is required for worker metadata. Install it with: brew install jq" >&2
+        exit 1
+    fi
+    if [[ "$ORCHESTRATION_MODE" == "workers" ]]; then
+        list_workers
+    else
+        collect_worker "$WORKER_NAME"
+    fi
+    exit $?
+fi
+
+if [[ "$ORCHESTRATION_MODE" == "spawn-herdr" && "${HERDR_ENV:-}" != "1" ]]; then
+    echo "yakk --spawn-herdr must run inside a Herdr-managed pane." >&2
+    exit 1
+fi
+
+if [[ "$ORCHESTRATION_MODE" == spawn-* ]]; then
+    if [[ "${HERDR_ENV:-}" == "1" ]] && ! command -v herdr >/dev/null 2>&1; then
+        echo "herdr command not found." >&2
+        exit 1
+    fi
+    if ! command -v jq >/dev/null 2>&1; then
+        echo "jq is required for Herdr workers. Install it with: brew install jq" >&2
+        exit 1
+    fi
+    current_context="$(current_session_context)" || exit 1
+    IFS=$'\t' read -r provider title session workspace transcript <<< "$current_context"
+    spawn_worker "$provider" "$title" "$session" "$workspace" "$transcript" \
+        "$SPAWN_AGENT" "$SPAWN_TASK" "$ORCHESTRATION_MODE"
+    exit $?
+fi
 
 # Scan a JSONL transcript for the first genuinely-typed user message,
 # skipping lines whose extraction fails (raw JSON leaking through) or
@@ -631,6 +1020,8 @@ emit_rows() {
 # sessions — everything after this point streams.
 # ------------------------------------------------------------
 
+ensure_fzf
+
 meta_raw="$( { scan_claude; scan_codex; scan_cursor; scan_grok; } )"
 
 if [[ -z "$meta_raw" ]]; then
@@ -646,7 +1037,7 @@ fi
 # caps title-extraction work to roughly the top 10 sessions.
 # ------------------------------------------------------------
 
-if [[ "${1:-}" == "-l" || "${1:-}" == "--list" ]]; then
+if [[ "$LIST_MODE" == "true" ]]; then
     printf "%s%-8s  %-19s  %-32s  %-50s%s\n" "$BOLD" "Agent" "Time" "Project" "Conversation" "$RESET"
 
     printf '%s\n' "$meta_raw" |

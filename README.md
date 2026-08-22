@@ -12,6 +12,13 @@ yakk --list      List the 10 most recent conversations
 yakk --off       Compact cross-agent handoff
 yakk --ass
                  Full sanitized cross-agent handoff
+yakk --spawn-herdr --agent AGENT --task TEXT
+                 Start a worker in a background Herdr tab
+yakk --spawn-term --agent AGENT --task TEXT
+                 Start a worker in a new terminal window
+yakk --workers   List workers started by yakk
+yakk --collect NAME
+                 Print a completed worker's result
 yakk --help      Show usage
 yakk --version   Show the installed version
 ```
@@ -21,11 +28,49 @@ Full handoffs omit system records, hidden reasoning, attachments, tool calls,
 and tool results. A confirmation is required when the estimated transferred
 context exceeds 50,000 tokens.
 
+## Workers (preview)
+
+Worker orchestration is currently available on macOS/Zsh only. Both spawn
+commands turn the supervising agent's current conversation into background
+context for a new Claude, Codex, Cursor, or Grok worker. They do not open
+`fzf` or ask interactive questions.
+
+`--spawn-herdr` creates a background [Herdr](https://herdr.dev/) tab and uses
+Herdr for agent startup and lifecycle detection. `--spawn-term` creates a
+private launcher and opens the worker in a new macOS terminal window. Set
+`YAKK_TERMINAL_APP` to choose an application other than Terminal. Over SSH,
+that window appears on the remote Mac's graphical desktop; use
+`--spawn-herdr` when the worker must remain remotely visible.
+
+```zsh
+yakk --spawn-herdr --agent claude --task "Review the installer"
+yakk --spawn-term --agent grok --task "Review the CLI design"
+yakk --workers
+yakk --collect yakk-claude-1724260000-12345
+```
+
+To make any supported agent the supervisor, tell it:
+
+```text
+Read `man yakk`, then use the Yakk CLI to delegate this project through Herdr.
+```
+
+Workers are instructed to write a concise result containing their outcome,
+changed files, verification, Git status, and unresolved issues. `--collect`
+prints that result so a supervising agent can pull it into its own context.
+Worker metadata and results are stored under a private temporary directory and
+are not committed to the repository.
+
+This preview does not create Git worktrees automatically. Before spawning,
+start the supervising session inside the worktree you want the worker to use.
+Otherwise, the worker inherits the supervisor's directory and multiple agents
+can edit the same checkout.
+
 ## Requirements
 
 - macOS with Zsh, or Windows with PowerShell 5.1+
 - `fzf` 0.74.3 or newer
-- `jq` (macOS handoffs only)
+- `jq` (macOS handoffs and Herdr workers)
 - At least one supported agent CLI: `claude`, `codex`, `cursor-agent`, or `grok`
 
 ## Install
@@ -91,6 +136,7 @@ depend on them.
 zsh -n yakk.zsh
 ./yakk.zsh --help
 ./yakk.zsh --version
+man ./man/yakk.1
 ```
 
 On Windows:

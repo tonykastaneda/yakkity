@@ -12,6 +12,7 @@ class Yakkity < Formula
 
   def install
     bin.install "yakk.zsh" => "yakk"
+    man1.install "man/yakk.1" if (buildpath/"man/yakk.1").exist?
   end
 
   test do
