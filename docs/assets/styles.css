@@ -401,6 +401,8 @@
     gap: 10px;
   }
   footer.site .links { display: flex; gap: 18px; }
+  footer.site .footer-credit { display: flex; flex-direction: column; gap: 2px; }
+  footer.site .footer-heart { color: var(--accent); }
 
   @media (max-width: 620px) {
     html,
