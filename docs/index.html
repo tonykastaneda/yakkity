@@ -184,13 +184,16 @@ document.querySelectorAll('.tab').forEach(function (tab) {
     var terms = value.toLowerCase().trim().split(/\s+/).filter(Boolean);
     return terms.every(function (term) { return sessionText(session).indexOf(term) !== -1; });
   }
-  function render(value, limit) {
+  function render(value, limit, selectedIndex, windowStart) {
     var filtered = sessions.filter(function (session) { return matches(session, value); });
     if (typeof limit === 'number') filtered = filtered.slice(0, limit);
+    selectedIndex = typeof selectedIndex === 'number' ? selectedIndex : 0;
+    windowStart = typeof windowStart === 'number' ? windowStart : 0;
+    var visible = filtered.slice(windowStart, windowStart + 5);
     results.innerHTML = '';
-    filtered.slice(0, 5).forEach(function (session, index) {
+    visible.forEach(function (session, index) {
       var row = document.createElement('div');
-      row.className = 'term-row' + (index === 0 ? ' selected' : '');
+      row.className = 'term-row' + (index + windowStart === selectedIndex ? ' selected' : '');
       row.innerHTML = '<span class="agent ' + session.kind + '">' + session.agent + '</span>' +
         '<span class="time">' + session.time + '</span>' +
         '<span class="project">' + session.project + '</span>' +
@@ -198,6 +201,16 @@ document.querySelectorAll('.tab').forEach(function (tab) {
       results.appendChild(row);
     });
     if (!filtered.length) results.innerHTML = '<div class="term-empty">0 sessions</div>';
+  }
+  async function scrollFullList() {
+    var positions = [0, 1, 2, 3, 4, 5, 6, 7, 6, 5, 4, 3, 2, 1, 0];
+    for (var i = 0; i < positions.length; i += 1) {
+      var selected = positions[i];
+      var start = Math.max(0, Math.min(selected - 2, sessions.length - 5));
+      render('', undefined, selected, start);
+      await wait(480);
+    }
+    render('');
   }
   async function typeInto(value, speed, filterResults) {
     for (var i = 1; i <= value.length; i += 1) {
@@ -239,6 +252,10 @@ document.querySelectorAll('.tab').forEach(function (tab) {
     await wait(1800);
     await erase();
     await typeInto('2 hours ago', 130, true);
+    await wait(2200);
+    await erase();
+    await wait(800);
+    await scrollFullList();
     await wait(30000);
     runDemo();
   }
