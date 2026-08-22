@@ -216,9 +216,12 @@
     padding: 18px 16px 16px;
     font-size: 12.5px;
     overflow-x: auto;
+    min-height: 245px;
   }
   .term-body .line { white-space: pre; color: var(--text2); }
   .term-body .prompt { color: var(--accent); }
+  .demo-input-line { min-height: 20px; }
+  .demo-input-line .resume-label { color: var(--text2); }
   .terminal-cursor {
     display: inline-block;
     width: 7px;
@@ -258,7 +261,6 @@
     color: var(--faint);
     font-size: 11px;
   }
-  .term-footer .resume-label { color: var(--text2); }
   .term-empty { padding: 12px 6px; color: var(--faint); font-size: 11px; }
 
   @media (prefers-reduced-motion: reduce) {
