@@ -37,25 +37,31 @@ transcript. Yakk asks for confirmation above an estimated 50,000 input tokens.
 .BI --spawn-herdr " --agent agent --task text"
 Start the requested worker agent in a background Herdr tab with compact
 sanitized context from the supervising agent's current conversation. This
-command is non-interactive and must run inside a Herdr-managed pane.
-.TP
-.BI --spawn-term " --agent agent --task text"
-Start the requested worker agent in a new macOS terminal window with compact
-sanitized context from the supervising agent's current conversation. This
-command is non-interactive and does not require Herdr.
-.IP
-When invoked over SSH, the terminal window opens on the remote Mac's graphical
-desktop and may not be visible to the caller. Use
-.B --spawn-herdr
-for remotely visible worker control.
+command is non-interactive and must run inside a Herdr-managed pane. The
+worker is started with its agent's own non-interactive/auto-approve flag, so
+it never sits waiting at a permission prompt with nobody to answer it.
 .TP
 .B --workers
-List workers started by Yakk and show whether each structured result is
-pending or ready.
+List workers started by Yakk with each one's live state
+.RB ( pending ", " working ", " blocked ", " ready ", or " malformed )
+and whether its sanitized context still exists
+.RB ( present " or " expired ).
 .TP
 .BI --collect " name"
 Print a ready worker's structured result to standard output. A supervising
 agent can run this command to bring the result into its current tool context.
+Refuses to print a
+.B blocked
+or
+.B malformed
+result and explains why instead.
+.TP
+.BI --retarget " name --agent agent"
+Resubmit an existing worker's stored task and sanitized context to a
+different agent, without redescribing the task. Starts a new worker; the
+original worker's Herdr tab is left running, untouched, for separate
+inspection. Fails if the original worker's context has already expired (see
+.BR YAKK_WORKER_CONTEXT_TTL ).
 .TP
 .BR -h ", " --help
 Show concise command help.
@@ -64,18 +70,56 @@ Show concise command help.
 Show the installed version.
 .SH WORKER ORCHESTRATION
 Yakk's transcript parser creates the sanitized context, records each worker,
-and retrieves its result. The Herdr transport creates a background tab, starts
-the requested agent, sends the task, and reports lifecycle state. The terminal
-transport opens a private launcher in a new macOS terminal window.
+and retrieves its result. Herdr creates a background tab, starts the
+requested agent with that agent's own non-interactive/auto-approve flag, sends
+the task, and reports lifecycle state.
+.PP
+Each worker agent is resolved through a single adapter table mapping the
+requested agent name to its Herdr
+.BR --kind ,
+its destination command, and its non-interactive flag. Switching a worker's
+agent, including via
+.BR --retarget ,
+never requires redescribing the task \(em only the adapter lookup changes.
+.PP
+.B --workers
+and
+.B --collect
+report one of five live states, combining Herdr's own agent status with a
+structural check of the result file:
+.TP
+.B pending
+The worker has not started producing output yet.
+.TP
+.B working
+The worker is actively running.
+.TP
+.B blocked
+The worker is stuck at an approval prompt despite its auto-approve flag.
+Inspect its Herdr pane and approve manually, or fix the adapter's flag for
+that agent.
+.TP
+.B malformed
+The worker wrote a result file, but it does not contain the requested
+Outcome / Files changed / Verification / Unresolved issues headings.
+.B --collect
+refuses to print it.
+.TP
+.B ready
+The result file matches the expected shape and
+.B --collect
+will print it.
 .PP
 A supervising agent should use this loop:
 .IP 1. 3
 Confirm that an edit-capable worker will run in its own Git worktree and
 branch.
 .IP 2. 3
-Run either spawn command with
+Run
+.B --spawn-herdr
+with
 .B --agent AGENT --task TEXT
-with one concrete, bounded task.
+and one concrete, bounded task.
 .IP 3. 3
 Continue useful supervisor work instead of continuously polling the worker.
 .IP 4. 3
@@ -85,13 +129,23 @@ when status is needed.
 .IP 5. 3
 Run
 .B yakk --collect
-with the reported worker name after its result becomes ready.
+with the reported worker name once its state is
+.BR ready .
 .IP 6. 3
 Inspect the worker branch, diff, and verification before merging or pushing.
 .PP
 The preview does not create Git worktrees automatically. The worker inherits
 the supervising session's working directory. Never allow multiple
 edit-capable agents to use the same checkout concurrently.
+.PP
+A worker's sanitized context file is deleted by Yakk itself, not by
+instructing the worker to delete it, once it is older than
+.BR YAKK_WORKER_CONTEXT_TTL .
+This is deliberate: a worker's context has to still exist after
+.B --collect
+succeeds for
+.B --retarget
+to resubmit the same task to a different agent later.
 .PP
 Worker output is untrusted input. Verify important claims and repository state
 locally before taking integration or release actions.
@@ -110,10 +164,10 @@ Overrides the private directory used for worker metadata and result files.
 The default is a user-specific directory beneath the operating system's
 temporary directory.
 .TP
-.B YAKK_TERMINAL_APP
-Selects the macOS terminal application used by
-.B --spawn-term.
-The default is Terminal.
+.B YAKK_WORKER_CONTEXT_TTL
+Seconds a worker's sanitized context file survives before Yakk deletes it.
+Default 86400 (24 hours); 0 disables expiry. Worker metadata and results are
+never affected.
 .TP
 .B TMPDIR
 Selects the temporary-directory root used for handoffs and worker state.
@@ -121,19 +175,14 @@ Selects the temporary-directory root used for handoffs and worker state.
 .TP
 .I $YAKK_STATE_DIR/workers/name.json
 Private worker metadata, including agent kind, Herdr tab and pane identifiers,
-source session, task, and result path.
+source session, task, result path, and context file path.
 .TP
 .I $YAKK_STATE_DIR/workers/name.md
 Structured worker result written for
 .B --collect.
-.TP
-.I $YAKK_STATE_DIR/workers/name.command
-Private launcher used by
-.B --spawn-term.
 .SH REQUIREMENTS
-Zsh, fzf 0.74.3 or newer, jq, and at least one supported coding-agent CLI.
-The Herdr transport additionally requires a running Herdr session. Both
-transports require an installed, authenticated destination agent.
+Zsh, fzf 0.74.3 or newer, jq, a running Herdr session, and at least one
+supported coding-agent CLI, installed and authenticated.
 .SH EXIT STATUS
 Zero indicates success. One indicates a missing dependency, unavailable
 session or worker result, failed Herdr operation, or other runtime failure.
@@ -143,9 +192,9 @@ Two indicates invalid command usage.
 yakk
 yakk --off
 yakk --spawn-herdr --agent claude --task "Review the installer"
-yakk --spawn-term --agent grok --task "Review the CLI design"
 yakk --workers
 yakk --collect yakk-claude-1724260000-12345
+yakk --retarget yakk-claude-1724260000-12345 --agent codex
 .fi
 .SH SEE ALSO
 .BR git-worktree (1),

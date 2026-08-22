@@ -15,11 +15,11 @@ yakk --ass
                  Full sanitized cross-agent handoff
 yakk --spawn-herdr --agent AGENT --task TEXT
                  Start a worker in a background Herdr tab
-yakk --spawn-term --agent AGENT --task TEXT
-                 Start a worker in a new terminal window
 yakk --workers   List workers started by yakk
 yakk --collect NAME
                  Print a completed worker's result
+yakk --retarget NAME --agent AGENT
+                 Resubmit a worker's task and context to a different agent
 yakk --help      Show usage
 yakk --version   Show the installed version
 ```
@@ -31,23 +31,18 @@ context exceeds 50,000 tokens.
 
 ## Workers (preview)
 
-Worker orchestration is currently available on macOS/Zsh only. Both spawn
-commands turn the supervising agent's current conversation into background
-context for a new Claude, Codex, Cursor, or Grok worker. They do not open
-`fzf` or ask interactive questions.
-
-`--spawn-herdr` creates a background [Herdr](https://herdr.dev/) tab and uses
-Herdr for agent startup and lifecycle detection. `--spawn-term` creates a
-private launcher and opens the worker in a new macOS terminal window. Set
-`YAKK_TERMINAL_APP` to choose an application other than Terminal. Over SSH,
-that window appears on the remote Mac's graphical desktop; use
-`--spawn-herdr` when the worker must remain remotely visible.
+`--spawn-herdr` turns the supervising agent's current conversation into
+background context for a new Claude, Codex, Cursor, or Grok worker, started
+in a background [Herdr](https://herdr.dev/) tab. It does not open `fzf` or
+ask interactive questions. Each worker agent is started with that agent's own
+non-interactive/auto-approve flag (resolved through one small adapter table),
+so it won't silently sit stuck at a permission prompt.
 
 ```zsh
 yakk --spawn-herdr --agent claude --task "Review the installer"
-yakk --spawn-term --agent grok --task "Review the CLI design"
 yakk --workers
 yakk --collect yakk-claude-1724260000-12345
+yakk --retarget yakk-claude-1724260000-12345 --agent codex
 ```
 
 To make any supported agent the supervisor, tell it:
@@ -56,11 +51,21 @@ To make any supported agent the supervisor, tell it:
 Read `man yakk`, then use the Yakk CLI to delegate this project through Herdr.
 ```
 
-Workers are instructed to write a concise result containing their outcome,
-changed files, verification, Git status, and unresolved issues. `--collect`
-prints that result so a supervising agent can pull it into its own context.
-Worker metadata and results are stored under a private temporary directory and
-are not committed to the repository.
+`--workers`/`--collect` report a live state per worker — `pending`, `working`,
+`blocked` (stuck at an approval prompt despite the auto-approve flag),
+`malformed` (wrote a result that doesn't match the expected shape), or `ready`
+— by combining Herdr's own agent status with a structural check of the result
+file. `--collect` only prints a `ready` result.
+
+`--retarget NAME --agent AGENT` resubmits an existing worker's stored task
+and context to a different agent without redescribing the task, and starts a
+new worker — the original worker's tab is left running untouched. This is
+why a worker's sanitized context file is expired by yakk itself on a TTL
+(`YAKK_WORKER_CONTEXT_TTL`, default 24h) rather than deleted the moment
+`--collect` succeeds.
+
+Worker metadata and results are stored under a private temporary directory
+and are not committed to the repository.
 
 This preview does not create Git worktrees automatically. Before spawning,
 start the supervising session inside the worktree you want the worker to use.

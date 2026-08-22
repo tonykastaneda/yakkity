@@ -18,11 +18,11 @@ Usage: yakk [OPTION]
                Hand off the full sanitized conversation to a different agent
   --spawn-herdr --agent AGENT --task TEXT
                Start a worker in a background Herdr tab
-  --spawn-term --agent AGENT --task TEXT
-               Start a worker in a new terminal window
   --workers    List workers started by yakk
   --collect NAME
                Print a worker's result for the supervising agent
+  --retarget NAME --agent AGENT
+               Resubmit a worker's task and context to a different agent
   -h, --help   Show this help
   -v, --version
                Show the installed version
@@ -53,8 +53,8 @@ case "${1:-}" in
         ;;
     --off|-off) HANDOFF_MODE="compact" ;;
     --ass|-ass) HANDOFF_MODE="full" ;;
-    --spawn-herdr|--spawn-term)
-        ORCHESTRATION_MODE="${1#--}"
+    --spawn-herdr)
+        ORCHESTRATION_MODE="spawn-herdr"
         shift
         while (( $# > 0 )); do
             case "$1" in
@@ -75,7 +75,7 @@ case "${1:-}" in
             esac
         done
         if [[ -z "$SPAWN_AGENT" || -z "$SPAWN_TASK" ]]; then
-            echo "Usage: yakk --spawn-{herdr,term} --agent AGENT --task TEXT" >&2
+            echo "Usage: yakk --spawn-herdr --agent AGENT --task TEXT" >&2
             exit 2
         fi
         ;;
@@ -83,6 +83,31 @@ case "${1:-}" in
     --collect)
         ORCHESTRATION_MODE="collect"
         WORKER_NAME="${2:-}"
+        ;;
+    --retarget)
+        ORCHESTRATION_MODE="retarget"
+        shift
+        if (( $# >= 1 )) && [[ "$1" != --* ]]; then
+            WORKER_NAME="$1"
+            shift
+        fi
+        while (( $# > 0 )); do
+            case "$1" in
+                --agent)
+                    (( $# >= 2 )) || { echo "--agent requires a value" >&2; exit 2; }
+                    SPAWN_AGENT="$2"
+                    shift 2
+                    ;;
+                *)
+                    echo "Unknown retarget option: $1" >&2
+                    exit 2
+                    ;;
+            esac
+        done
+        if [[ -z "$WORKER_NAME" || -z "$SPAWN_AGENT" ]]; then
+            echo "Usage: yakk --retarget NAME --agent AGENT" >&2
+            exit 2
+        fi
         ;;
     -h|--help)
         usage
@@ -140,6 +165,10 @@ CURSOR_DIR="$HOME/.cursor"
 GROK_DIR="$HOME/.grok"
 YAKK_STATE_DIR="${YAKK_STATE_DIR:-${TMPDIR:-/tmp}/yakkity-${UID:-user}}"
 YAKK_WORKERS_DIR="$YAKK_STATE_DIR/workers"
+# Seconds a worker's sanitized context file survives before yakk deletes it
+# itself; 0 disables expiry. Not tied to --collect, since a collected worker
+# may still be retargeted at a different agent later.
+YAKK_WORKER_CONTEXT_TTL="${YAKK_WORKER_CONTEXT_TTL:-86400}"
 
 BOLD=$'\033[1m'
 DIM=$'\033[2m'
@@ -354,22 +383,21 @@ EOF
             --footer=$'↑↓ navigate  |  ENTER hand off  |  ESC cancel'
 }
 
-agent_kind() {
-    case "$1" in
-        claude) echo "claude" ;;
-        codex) echo "codex" ;;
-        cursor-agent) echo "cursor" ;;
-        grok) echo "grok" ;;
-        *) return 1 ;;
-    esac
-}
-
-worker_destination() {
+# Single source of truth mapping a requested worker agent to its display
+# name, destination CLI command, Herdr --kind, and the non-interactive/
+# auto-approve flag(s) forwarded to that CLI via `herdr agent start ... --
+# ARGS`. Adding a supported worker agent means adding one line here —
+# nothing else in the spawn/retarget path special-cases an agent by name.
+worker_adapter() {
     case "${1:l}" in
-        claude) printf 'Claude\tclaude\n' ;;
-        codex) printf 'Codex\tcodex\n' ;;
-        cursor|cursor-agent) printf 'Cursor\tcursor-agent\n' ;;
-        grok) printf 'Grok\tgrok\n' ;;
+        claude)
+            printf 'Claude\tclaude\tclaude\t--dangerously-skip-permissions\n' ;;
+        codex)
+            printf 'Codex\tcodex\tcodex\t--ask-for-approval never\n' ;;
+        cursor|cursor-agent)
+            printf 'Cursor\tcursor-agent\tcursor\t--force\n' ;;
+        grok)
+            printf 'Grok\tgrok\tgrok\t--always-approve\n' ;;
         *) return 1 ;;
     esac
 }
@@ -380,9 +408,79 @@ worker_metadata_file() {
     printf '%s/%s.json\n' "$YAKK_WORKERS_DIR" "$name"
 }
 
-list_workers() {
-    local metadata name kind transport created result_file state
+# Deletes sanitized-context temp files older than YAKK_WORKER_CONTEXT_TTL.
+# Worker metadata and results are left alone — only the copied conversation
+# text is time-boxed. Runs lazily wherever worker metadata is read, so no
+# background process or cron entry is required.
+prune_expired_worker_context() {
+    (( YAKK_WORKER_CONTEXT_TTL > 0 )) || return 0
+
+    local metadata context_file created now age
     local -a metadata_files
+
+    metadata_files=("$YAKK_WORKERS_DIR"/*.json(N))
+    (( ${#metadata_files} > 0 )) || return 0
+
+    now="$(date +%s)"
+    for metadata in "${metadata_files[@]}"; do
+        context_file="$(jq -r '.context_file // empty' "$metadata" 2>/dev/null)"
+        [[ -n "$context_file" && -f "$context_file" ]] || continue
+
+        created="$(jq -r '.context_created_epoch // 0' "$metadata" 2>/dev/null)"
+        age=$(( now - created ))
+        if (( age > YAKK_WORKER_CONTEXT_TTL )); then
+            rm -f "$context_file"
+            jq '.context_file = ""' "$metadata" > "${metadata}.tmp" 2>/dev/null &&
+                mv "${metadata}.tmp" "$metadata"
+        fi
+    done
+}
+
+# A worker's result is trusted only once it carries the shape the spawn
+# prompt asked for. Requiring 3 of 4 markers (rather than an exact template
+# match) tolerates a worker's own phrasing variance without accepting a
+# stray line of text as a genuine result.
+worker_result_valid() {
+    local file="$1" hits=0
+
+    [[ -s "$file" ]] || return 1
+
+    grep -qi 'outcome' "$file" && (( hits++ ))
+    grep -qi 'files\? changed\|changed files' "$file" && (( hits++ ))
+    grep -qi 'verification\|verified' "$file" && (( hits++ ))
+    grep -qi 'unresolved\|open issues\|follow.up' "$file" && (( hits++ ))
+
+    (( hits >= 3 ))
+}
+
+# Live worker state: blocked (stuck on an approval prompt), ready (result
+# file matches the expected shape), malformed (wrote something, but not
+# that shape), working, or pending. Falls back to the old file-only
+# ready/pending distinction if Herdr can't be reached, so reading past
+# results never hard-depends on a live Herdr session.
+worker_state() {
+    local pane_id="$1" result_file="$2" agent_status
+
+    agent_status="$(herdr agent get "$pane_id" 2>/dev/null | jq -r '.result.agent.agent_status // "unknown"' 2>/dev/null)"
+
+    if [[ "$agent_status" == "blocked" ]]; then
+        echo "blocked"
+    elif worker_result_valid "$result_file"; then
+        echo "ready"
+    elif [[ -s "$result_file" ]]; then
+        echo "malformed"
+    elif [[ "$agent_status" == "working" ]]; then
+        echo "working"
+    else
+        echo "pending"
+    fi
+}
+
+list_workers() {
+    local metadata name kind created result_file pane_id context_file state context_state
+    local -a metadata_files
+
+    prune_expired_worker_context
 
     metadata_files=("$YAKK_WORKERS_DIR"/*.json(N.om))
     if (( ${#metadata_files} == 0 )); then
@@ -390,30 +488,36 @@ list_workers() {
         return 0
     fi
 
-    printf "%-32s  %-8s  %-12s  %-19s  %s\n" "Worker" "Agent" "Transport" "Created" "Result"
+    printf "%-32s  %-8s  %-19s  %-10s  %s\n" "Worker" "Agent" "Created" "State" "Context"
     for metadata in "${metadata_files[@]}"; do
         name="$(jq -r '.name' "$metadata")"
         kind="$(jq -r '.kind' "$metadata")"
-        transport="$(jq -r '.transport // "herdr"' "$metadata")"
         created="$(jq -r '.created_at' "$metadata")"
+        pane_id="$(jq -r '.pane_id' "$metadata")"
         result_file="$(jq -r '.result_file' "$metadata")"
-        if [[ -s "$result_file" ]]; then
-            state="ready"
+        context_file="$(jq -r '.context_file // empty' "$metadata")"
+
+        state="$(worker_state "$pane_id" "$result_file")"
+        if [[ -n "$context_file" && -f "$context_file" ]]; then
+            context_state="present"
         else
-            state="pending"
+            context_state="expired"
         fi
-        printf "%-32s  %-8s  %-12s  %-19s  %s\n" "$name" "$kind" "$transport" "$created" "$state"
+
+        printf "%-32s  %-8s  %-19s  %-10s  %s\n" "$name" "$kind" "$created" "$state" "$context_state"
     done
 }
 
 collect_worker() {
-    local name="$1" metadata result_file
+    local name="$1" metadata result_file pane_id state
 
     if [[ -z "$name" ]]; then
         echo "Usage: yakk --collect NAME" >&2
         echo "Run yakk --workers to list worker names." >&2
         return 2
     fi
+
+    prune_expired_worker_context
 
     metadata="$(worker_metadata_file "$name")" || {
         echo "Invalid worker name: $name" >&2
@@ -425,12 +529,32 @@ collect_worker() {
         return 1
     fi
 
+    pane_id="$(jq -r '.pane_id' "$metadata")"
     result_file="$(jq -r '.result_file' "$metadata")"
-    if [[ ! -s "$result_file" ]]; then
-        echo "Worker result is not ready: $name" >&2
-        echo "Check its Herdr pane or run yakk --workers." >&2
-        return 1
-    fi
+    state="$(worker_state "$pane_id" "$result_file")"
+
+    case "$state" in
+        ready) ;;
+        blocked)
+            echo "Worker $name is blocked on an approval prompt in its Herdr pane." >&2
+            echo "Approve it manually, then run yakk --collect again." >&2
+            return 1
+            ;;
+        malformed)
+            echo "Worker $name wrote a result, but it doesn't match the expected shape." >&2
+            echo "Inspect it directly: $result_file" >&2
+            return 1
+            ;;
+        working)
+            echo "Worker $name is still working." >&2
+            return 1
+            ;;
+        *)
+            echo "Worker result is not ready: $name" >&2
+            echo "Check its Herdr pane or run yakk --workers." >&2
+            return 1
+            ;;
+    esac
 
     printf '# Yakk worker result\n\n'
     printf 'Worker: %s\n\n' "$name"
@@ -547,33 +671,37 @@ current_session_context() {
 
 spawn_worker() {
     local provider="$1" title="$2" session="$3" workspace="$4" transcript="$5"
-    local requested_agent="$6" task="$7" transport="$8"
-    local agent_selection destination destination_command kind
+    local requested_agent="$6" task="$7" retargeted_from="${8:-}" reuse_context_file="${9:-}"
+    local agent_selection destination destination_command kind approve_flags
     local handoff_result handoff_file estimate_tokens created_at epoch name
-    local result_file metadata_file tab_json tab_id="" pane_id="" worker_prompt
-    local launcher_file="" terminal_app="${YAKK_TERMINAL_APP:-Terminal}"
+    local result_file metadata_file tab_json tab_id="" pane_id="" worker_prompt agent_status
 
-    agent_selection="$(worker_destination "$requested_agent")" || {
+    agent_selection="$(worker_adapter "$requested_agent")" || {
         echo "Unsupported worker agent: $requested_agent" >&2
         echo "Choose claude, codex, cursor, or grok." >&2
         return 2
     }
-    IFS=$'\t' read -r destination destination_command <<< "$agent_selection"
+    IFS=$'\t' read -r destination destination_command kind approve_flags <<< "$agent_selection"
     if ! command -v "$destination_command" >/dev/null 2>&1; then
         echo "$destination_command command not found." >&2
         return 1
     fi
-    kind="$(agent_kind "$destination_command")" || {
-        echo "Unsupported Herdr worker command: $destination_command" >&2
+    [[ -n "$approve_flags" ]] || {
+        echo "Internal error: no auto-approve flag configured for $destination_command" >&2
         return 1
     }
 
-    handoff_result="$(create_handoff_file compact "$provider" "$title" "$transcript")"
-    if [[ -z "$handoff_result" ]]; then
-        echo "No transferable user/assistant text was found in this session." >&2
-        return 1
+    if [[ -n "$reuse_context_file" && -f "$reuse_context_file" ]]; then
+        handoff_file="$reuse_context_file"
+        estimate_tokens=$(( ($(wc -c < "$handoff_file" | tr -d ' ') + 3) / 4 ))
+    else
+        handoff_result="$(create_handoff_file compact "$provider" "$title" "$transcript")"
+        if [[ -z "$handoff_result" ]]; then
+            echo "No transferable user/assistant text was found in this session." >&2
+            return 1
+        fi
+        IFS=$'\t' read -r handoff_file estimate_tokens <<< "$handoff_result"
     fi
-    IFS=$'\t' read -r handoff_file estimate_tokens <<< "$handoff_result"
 
     umask 077
     mkdir -p "$YAKK_WORKERS_DIR" || {
@@ -586,7 +714,6 @@ spawn_worker() {
     name="yakk-${kind}-${epoch}-${RANDOM}"
     name="${name[1,32]}"
     result_file="$YAKK_WORKERS_DIR/${name}.md"
-    launcher_file="$YAKK_WORKERS_DIR/${name}.command"
     metadata_file="$(worker_metadata_file "$name")" || {
         rm -f "$handoff_file"
         return 1
@@ -600,60 +727,37 @@ ${task}
 
 Work in: ${workspace:-$PWD}
 
-Do not repeat the supplied transcript. Complete and verify the task. Before your final response, write a concise Markdown handoff to ${result_file}. Include the outcome, files changed, verification performed, commit/branch status, and any unresolved issues. Then delete ${handoff_file}."
+Do not repeat the supplied transcript. Complete and verify the task. Before your final response, write a concise Markdown handoff to ${result_file} with these headings: Outcome, Files changed, Verification, Unresolved issues. Include commit/branch status under Outcome or Verification as appropriate."
 
-    if [[ "$transport" == "spawn-herdr" ]]; then
-        if [[ "${HERDR_ENV:-}" != "1" || -z "${HERDR_WORKSPACE_ID:-}" ]]; then
-            rm -f "$handoff_file"
-            echo "yakk --spawn-herdr must run inside a Herdr-managed pane." >&2
-            return 1
-        fi
-        if ! command -v herdr >/dev/null 2>&1; then
-            rm -f "$handoff_file"
-            echo "herdr command not found." >&2
-            return 1
-        fi
-        tab_json="$(herdr tab create \
-            --workspace "$HERDR_WORKSPACE_ID" \
-            --cwd "${workspace:-$PWD}" \
-            --label "$name" \
-            --no-focus)" || {
-            rm -f "$handoff_file"
-            return 1
-        }
-        tab_id="$(printf '%s\n' "$tab_json" | jq -r '.result.tab.tab_id')"
-        pane_id="$(printf '%s\n' "$tab_json" | jq -r '.result.root_pane.pane_id')"
-        if [[ -z "$pane_id" || "$pane_id" == "null" ]]; then
-            rm -f "$handoff_file"
-            echo "Herdr created a tab but did not return its root pane ID." >&2
-            return 1
-        fi
-    elif [[ "$transport" == "spawn-term" ]]; then
-        if [[ "$(uname -s)" != "Darwin" || ! -x /usr/bin/open ]]; then
-            rm -f "$handoff_file"
-            echo "yakk --spawn-term currently requires macOS." >&2
-            return 1
-        fi
-        {
-            printf '#!/bin/zsh\n'
-            printf 'cd -- %q\n' "${workspace:-$PWD}"
-            printf 'exec %q %q\n' "$destination_command" "$worker_prompt"
-        } > "$launcher_file"
-        chmod 700 "$launcher_file"
-        if [[ -n "${SSH_CONNECTION:-}${SSH_CLIENT:-}${SSH_TTY:-}" ]]; then
-            echo "Warning: SSH detected. The worker terminal will open on the remote Mac's desktop." >&2
-            echo "Use --spawn-herdr for a remotely visible worker." >&2
-        fi
-    else
+    if [[ "${HERDR_ENV:-}" != "1" || -z "${HERDR_WORKSPACE_ID:-}" ]]; then
         rm -f "$handoff_file"
-        echo "Unsupported worker transport: $transport" >&2
-        return 2
+        echo "yakk --spawn-herdr must run inside a Herdr-managed pane." >&2
+        return 1
+    fi
+    if ! command -v herdr >/dev/null 2>&1; then
+        rm -f "$handoff_file"
+        echo "herdr command not found." >&2
+        return 1
+    fi
+    tab_json="$(herdr tab create \
+        --workspace "$HERDR_WORKSPACE_ID" \
+        --cwd "${workspace:-$PWD}" \
+        --label "$name" \
+        --no-focus)" || {
+        rm -f "$handoff_file"
+        return 1
+    }
+    tab_id="$(printf '%s\n' "$tab_json" | jq -r '.result.tab.tab_id')"
+    pane_id="$(printf '%s\n' "$tab_json" | jq -r '.result.root_pane.pane_id')"
+    if [[ -z "$pane_id" || "$pane_id" == "null" ]]; then
+        rm -f "$handoff_file"
+        echo "Herdr created a tab but did not return its root pane ID." >&2
+        return 1
     fi
 
     jq -n \
         --arg name "$name" \
         --arg kind "$kind" \
-        --arg transport "$transport" \
         --arg created_at "$created_at" \
         --arg source_provider "$provider" \
         --arg source_session "$session" \
@@ -663,40 +767,85 @@ Do not repeat the supplied transcript. Complete and verify the task. Before your
         --arg tab_id "$tab_id" \
         --arg pane_id "$pane_id" \
         --arg result_file "$result_file" \
-        --arg launcher_file "$launcher_file" \
-        '{name: $name, kind: $kind, transport: $transport, created_at: $created_at,
+        --arg context_file "$handoff_file" \
+        --arg context_created_epoch "$epoch" \
+        --arg retargeted_from "$retargeted_from" \
+        '{name: $name, kind: $kind, transport: "herdr", created_at: $created_at,
           source_provider: $source_provider, source_session: $source_session,
           source_title: $source_title, workspace: $workspace, task: $task,
           tab_id: $tab_id, pane_id: $pane_id, result_file: $result_file,
-          launcher_file: $launcher_file}' \
+          context_file: $context_file,
+          context_created_epoch: ($context_created_epoch | tonumber),
+          retargeted_from: $retargeted_from}' \
         > "$metadata_file"
 
-    if [[ "$transport" == "spawn-herdr" ]]; then
-        if ! herdr agent start "$name" --kind "$kind" --pane "$pane_id"; then
-            rm -f "$handoff_file"
-            echo "The Herdr tab remains available for inspection: $tab_id" >&2
-            return 1
-        fi
-        if ! herdr agent prompt "$name" "$worker_prompt" \
-            --wait --until working --until idle --until done --timeout 10000; then
-            echo "Worker started but its task could not be submitted: $name" >&2
-            return 1
-        fi
-    elif ! /usr/bin/open -a "$terminal_app" "$launcher_file"; then
+    if ! herdr agent start "$name" --kind "$kind" --pane "$pane_id" -- ${=approve_flags}; then
         rm -f "$handoff_file"
-        echo "Could not open the worker in $terminal_app." >&2
+        echo "The Herdr tab remains available for inspection: $tab_id" >&2
+        return 1
+    fi
+    if ! herdr agent prompt "$name" "$worker_prompt" \
+        --wait --until working --until idle --until blocked --until done --timeout 10000; then
+        echo "Worker started but its task could not be submitted: $name" >&2
         return 1
     fi
 
-    printf '\n%sWorker started%s\n' "$BOLD" "$RESET"
-    printf 'Name: %s\nAgent: %s\nTransport: %s\n' "$name" "$destination" "$transport"
-    if [[ "$transport" == "spawn-herdr" ]]; then
-        printf 'Tab: %s\nPane: %s\n' "$tab_id" "$pane_id"
-    else
-        printf 'Terminal: %s\n' "$terminal_app"
+    agent_status="$(herdr agent get "$pane_id" 2>/dev/null | jq -r '.result.agent.agent_status // "unknown"' 2>/dev/null)"
+    if [[ "$agent_status" == "blocked" ]]; then
+        printf 'Warning: worker %s is blocked on an approval prompt despite %s.\n' \
+            "$name" "$approve_flags" >&2
+        printf 'Inspect its Herdr pane, approve manually, or fix the adapter flag.\n' >&2
     fi
+
+    printf '\n%sWorker started%s\n' "$BOLD" "$RESET"
+    printf 'Name: %s\nAgent: %s\n' "$name" "$destination"
+    printf 'Tab: %s\nPane: %s\n' "$tab_id" "$pane_id"
     printf 'Context: ~%s tokens\n' "$estimate_tokens"
     printf 'Collect: yakk --collect %s\n' "$name"
+}
+
+# Resubmits an existing worker's stored task and context to a different
+# agent, without the caller re-describing the task. Always mints a new
+# worker (new tab/pane/name) — the original worker's tab is left running,
+# untouched, for separate inspection.
+retarget_worker() {
+    local old_name="$1" requested_agent="$2"
+    local old_metadata context_file context_copy
+    local provider title session workspace task
+
+    prune_expired_worker_context
+
+    old_metadata="$(worker_metadata_file "$old_name")" || {
+        echo "Invalid worker name: $old_name" >&2
+        return 2
+    }
+    if [[ ! -f "$old_metadata" ]]; then
+        echo "Unknown worker: $old_name" >&2
+        return 1
+    fi
+
+    context_file="$(jq -r '.context_file // empty' "$old_metadata")"
+    if [[ -z "$context_file" || ! -f "$context_file" ]]; then
+        echo "Worker $old_name has no surviving context to retarget (expired)." >&2
+        echo "Re-run yakk --spawn-herdr from the original supervising session instead." >&2
+        return 1
+    fi
+
+    # Copy rather than share: each worker's own context carries its own TTL
+    # clock, so retargeting can't have one worker's expiry delete a file a
+    # sibling worker still depends on.
+    context_copy="$(mktemp "${TMPDIR:-/tmp}/chat-handoff.XXXXXX")" || return 1
+    chmod 600 "$context_copy"
+    cp "$context_file" "$context_copy"
+
+    provider="$(jq -r '.source_provider' "$old_metadata")"
+    title="$(jq -r '.source_title' "$old_metadata")"
+    session="$(jq -r '.source_session' "$old_metadata")"
+    workspace="$(jq -r '.workspace' "$old_metadata")"
+    task="$(jq -r '.task' "$old_metadata")"
+
+    spawn_worker "$provider" "$title" "$session" "$workspace" "" \
+        "$requested_agent" "$task" "$old_name" "$context_copy"
 }
 
 if [[ "$ORCHESTRATION_MODE" == "workers" || "$ORCHESTRATION_MODE" == "collect" ]]; then
@@ -717,8 +866,8 @@ if [[ "$ORCHESTRATION_MODE" == "spawn-herdr" && "${HERDR_ENV:-}" != "1" ]]; then
     exit 1
 fi
 
-if [[ "$ORCHESTRATION_MODE" == spawn-* ]]; then
-    if [[ "${HERDR_ENV:-}" == "1" ]] && ! command -v herdr >/dev/null 2>&1; then
+if [[ "$ORCHESTRATION_MODE" == "spawn-herdr" ]]; then
+    if ! command -v herdr >/dev/null 2>&1; then
         echo "herdr command not found." >&2
         exit 1
     fi
@@ -729,7 +878,24 @@ if [[ "$ORCHESTRATION_MODE" == spawn-* ]]; then
     current_context="$(current_session_context)" || exit 1
     IFS=$'\t' read -r provider title session workspace transcript <<< "$current_context"
     spawn_worker "$provider" "$title" "$session" "$workspace" "$transcript" \
-        "$SPAWN_AGENT" "$SPAWN_TASK" "$ORCHESTRATION_MODE"
+        "$SPAWN_AGENT" "$SPAWN_TASK" "" ""
+    exit $?
+fi
+
+if [[ "$ORCHESTRATION_MODE" == "retarget" ]]; then
+    if [[ "${HERDR_ENV:-}" != "1" ]]; then
+        echo "yakk --retarget must run inside a Herdr-managed pane." >&2
+        exit 1
+    fi
+    if ! command -v herdr >/dev/null 2>&1; then
+        echo "herdr command not found." >&2
+        exit 1
+    fi
+    if ! command -v jq >/dev/null 2>&1; then
+        echo "jq is required for retargeting workers." >&2
+        exit 1
+    fi
+    retarget_worker "$WORKER_NAME" "$SPAWN_AGENT"
     exit $?
 fi
 
