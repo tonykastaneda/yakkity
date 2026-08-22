@@ -9,7 +9,7 @@
 <article class="tier-card"><span class="plan">FREE</span><h2><span class="price">¢0.02</span><small>/ forever-ish</small></h2><p>For individuals who enjoy paying two cents for free software.</p><a class="button" href="index.html">OVERPAY NOW</a></article>
 <article class="tier-card"><span class="plan">BASIC</span><h2><span class="price">$69</span><small>/ whenever</small></h2><p>For growing teams with mature needs and immature accounting.</p><a class="button" href="index.html">LOOK BUSY</a></article>
 <article class="tier-card featured"><span class="popular">MOST CONCERNING</span><span class="plan">PRO</span><h2><span class="price">$0</span><small>/ plus paperwork</small></h2><p>Send your health physical and blood type. SSN highly recommended.*</p><a class="button primary" href="index.html">TRUST US</a></article>
-<article class="tier-card"><span class="plan">LIFETIME</span><h2><span class="price">$32.4T</span><small>/ US GDP</small></h2><p>Includes a trip to the Virgin Islands to meet world-famous actors like Jeffrey Epstein, New York financier.†</p><a class="button" href="index.html">CALL TREASURY</a></article>
+<article class="tier-card"><span class="plan">LIFETIME</span><h2><span class="price debt-clock" id="lifetime-price" aria-label="40 trillion dollars and increasing">$40,000,000,000,000</span><small>/ and counting</small></h2><p>Includes a trip to the Virgin Islands to meet world-famous actors like Jeffrey Epstein, New York financier.†</p><a class="button" href="index.html">CALL TREASURY</a></article>
 </div><p class="fine-print">* Please do not actually send us medical, financial, identity, or other personal information. There is nowhere to send it. This entire page is a joke.</p>
 <section class="comparison"><span class="eyebrow">COMPARE PLANS</span><h2>Every feature you never asked for</h2><div class="comparison-scroll"><table><thead><tr><th>Feature</th><th>Free</th><th>Basic</th><th>Pro</th><th>Lifetime</th></tr></thead><tbody>
 <tr><td>Resume coding-agent sessions</td><td>✓</td><td>✓</td><td>✓</td><td>Probably</td></tr>
@@ -23,4 +23,17 @@
 <tr><td>Uptime guarantee</td><td>Vibes</td><td>Three nines</td><td>Four-ish nines</td><td>Until the sun explodes</td></tr>
 <tr><td>Free yakkity sticker</td><td>Shipping $80</td><td>Digital only</td><td>Pending approval</td><td>Absolutely not</td></tr>
 </tbody></table></div><p class="fine-print">* YakkCoin patent pending. Unlimited means four. † Lifetime experiences may be chronologically impossible. Enterprise means we forgot to add a fifth card.</p></section></main>
-</div></body></html>
+</div><script>
+(function () {
+  var clock = document.getElementById('lifetime-price');
+  var startingDebt = 40000000000000;
+  var dollarsPerSecond = 125000;
+  var startedAt = Date.now();
+  function tick() {
+    var debt = startingDebt + Math.floor((Date.now() - startedAt) / 1000 * dollarsPerSecond);
+    clock.textContent = '$' + debt.toLocaleString('en-US');
+    requestAnimationFrame(tick);
+  }
+  tick();
+}());
+</script></body></html>
